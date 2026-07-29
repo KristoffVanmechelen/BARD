@@ -1,0 +1,48 @@
+{
+  "name": "BARD Development Environment",
+  "dockerComposeFile": "compose.yaml",
+  "service": "workspace",
+  "workspaceFolder": "/workspaces/bard",
+  "shutdownAction": "stopCompose",
+
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+
+  "forwardPorts": [5080, 5173, 1433],
+  "portsAttributes": {
+    "5080": {
+      "label": "BARD API (HTTP, dev)",
+      "onAutoForward": "notify"
+    },
+    "5173": {
+      "label": "BARD Frontend",
+      "onAutoForward": "openBrowser"
+    },
+    "1433": {
+      "label": "SQL Server (dev)",
+      "onAutoForward": "silent"
+    }
+  },
+
+  "postCreateCommand": "bash scripts/setup.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csharp",
+        "ms-mssql.mssql",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  },
+
+  "remoteEnv": {
+    "BARD_DB_HOST": "sqlserver",
+    "BARD_DB_PORT": "1433",
+    "BARD_DB_NAME": "BardDb.Dev",
+    "BARD_DB_USER": "sa",
+    "ASPNETCORE_ENVIRONMENT": "Development"
+  }
+}

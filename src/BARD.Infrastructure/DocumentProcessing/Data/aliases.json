@@ -1,0 +1,5 @@
+{
+  "_comment": "Product alias dictionary. Each key is a canonical product name; the list holds recognised synonyms/abbreviations. Editable by administrators without a redeploy. Extend freely.",
+  "JUPILER": ["JUP", "JUPILER", "Jupiler 24x33", "JUP VP", "JUPILER PILS"],
+  "DUVEL": ["DUVEL", "Duvel 24x33"]
+}

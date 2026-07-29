@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  workspace:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspaces/bard:cached
+    command: sleep infinity
+    environment:
+      - BARD_DB_HOST=sqlserver
+      - BARD_DB_PORT=1433
+      - BARD_DB_NAME=BardDb.Dev
+      - BARD_DB_USER=sa
+      - BARD_DB_PASSWORD=${BARD_DEV_DB_PASSWORD:-BardDev!Passw0rd2026}
+    depends_on:
+      - sqlserver
+      - azurite
+
+  # Supported Microsoft SQL Server Linux container image, used for
+  # development/testing only. Credentials below are development-only
+  # defaults — never used in production (see appsettings.Production.json,
+  # which never sources a connection string from this file).
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=${BARD_DEV_DB_PASSWORD:-BardDev!Passw0rd2026}
+      - MSSQL_PID=Developer
+    volumes:
+      - bard-sqldata:/var/opt/mssql
+
+  # Azure Storage emulator (official Microsoft image), used so
+  # IBlobStorageService (Azure.Storage.Blobs against
+  # "UseDevelopmentStorage=true") works in Codespaces without a real
+  # Azure Storage account. Development/testing only — production uses a
+  # real Azure Blob Storage connection string, never this emulator.
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    restart: unless-stopped
+    command: "azurite --blobHost 0.0.0.0 --blobPort 10000 --location /data --silent"
+    volumes:
+      - bard-blobdata:/data
+
+volumes:
+  bard-sqldata:
+  bard-blobdata:
