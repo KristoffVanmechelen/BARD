@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ..:/workspaces/bard:cached
+      - ..:/workspaces/BARD:cached
     command: sleep infinity
     environment:
       - BARD_DB_HOST=sqlserver

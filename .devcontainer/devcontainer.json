@@ -2,7 +2,7 @@
   "name": "BARD Development Environment",
   "dockerComposeFile": "compose.yaml",
   "service": "workspace",
-  "workspaceFolder": "/workspaces/bard",
+  "workspaceFolder": "/workspaces/BARD",
   "shutdownAction": "stopCompose",
 
   "features": {
