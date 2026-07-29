@@ -1,4 +1,5 @@
 using BARD.Application.Common.Interfaces;
+using BARD.Domain.Common;
 using BARD.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Reflection;
@@ -7,7 +8,9 @@ namespace BARD.Infrastructure.Persistence;
 
 public class BardDbContext : DbContext, IApplicationDbContext
 {
-    public BardDbContext(DbContextOptions<BardDbContext> options) : base(options) { }
+    public BardDbContext(DbContextOptions<BardDbContext> options) : base(options)
+    {
+    }
 
     public DbSet<Dossier> Dossiers => Set<Dossier>();
     public DbSet<DossierLine> DossierLines => Set<DossierLine>();
@@ -37,6 +40,8 @@ public class BardDbContext : DbContext, IApplicationDbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Ignore<DomainEvent>();
+
         modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
 
         modelBuilder.Entity<Dossier>().HasQueryFilter(d => !d.IsDeleted);

@@ -22,7 +22,7 @@ export default defineConfig({
         // scripts/start-dev.sh) runs HTTP-only on 5080. Production
         // deployments don't use this dev proxy at all (the built
         // frontend is served behind a real reverse proxy/HTTPS).
-        target: 'http://localhost:5080',
+        target: 'http://localhost:8080',
         changeOrigin: true,
       },
     },

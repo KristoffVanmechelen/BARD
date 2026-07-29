@@ -22,8 +22,11 @@ public class DossiersController : ControllerBase
     private readonly IApplicationDbContext _db;
     private readonly BARD.Application.Reporting.IDossierExportService _exportService;
 
-    public DossiersController(IMediator mediator, IBlobStorageService blobStorage,
-        IPdfTextExtractionService pdfTextExtraction, IApplicationDbContext db,
+    public DossiersController(
+        IMediator mediator,
+        IBlobStorageService blobStorage,
+        IPdfTextExtractionService pdfTextExtraction,
+        IApplicationDbContext db,
         BARD.Application.Reporting.IDossierExportService exportService)
     {
         _mediator = mediator;
@@ -35,12 +38,16 @@ public class DossiersController : ControllerBase
 
     [HttpPost("search")]
     [Authorize(Policy = PermissionCodes.DossierView)]
-    public async Task<ActionResult<DossierListResultDto>> Search([FromBody] DossierListRequest request, CancellationToken ct)
+    public async Task<ActionResult<DossierListResultDto>> Search(
+        [FromBody] DossierListRequest request,
+        CancellationToken ct)
         => Ok(await _mediator.Send(new GetDossierListQuery(request), ct));
 
     [HttpGet("{id:guid}")]
     [Authorize(Policy = PermissionCodes.DossierView)]
-    public async Task<ActionResult<DossierDetailDto>> GetById(Guid id, CancellationToken ct)
+    public async Task<ActionResult<DossierDetailDto>> GetById(
+        Guid id,
+        CancellationToken ct)
         => Ok(await _mediator.Send(new GetDossierDetailQuery(id), ct));
 
     /// <summary>
@@ -51,6 +58,7 @@ public class DossiersController : ControllerBase
     [HttpPost("process")]
     [Authorize(Policy = PermissionCodes.DossierProcess)]
     [RequestSizeLimit(200_000_000)]
+    [Consumes("multipart/form-data")]
     public async Task<ActionResult<ProcessDossierResult>> Process(
         [FromForm] string dossierReference,
         [FromForm] string companyName,
@@ -60,24 +68,43 @@ public class DossiersController : ControllerBase
         [FromForm] string? companyCity,
         [FromForm] string? companyCountry,
         [FromForm] DateOnly refundApplicationDate,
-        [FromForm] IFormFile excelFile,
-        [FromForm] List<IFormFile> pdfFiles,
+        IFormFile excelFile,
+        List<IFormFile> pdfFiles,
         CancellationToken ct)
     {
         async Task<UploadedFile> ToUploadedFile(IFormFile file)
         {
             using var ms = new MemoryStream();
             await file.CopyToAsync(ms, ct);
-            return new UploadedFile(file.FileName, ms.ToArray(), file.ContentType);
+
+            return new UploadedFile(
+                file.FileName,
+                ms.ToArray(),
+                file.ContentType);
         }
 
         var excel = await ToUploadedFile(excelFile);
+
         var pdfs = new List<UploadedFile>();
-        foreach (var f in pdfFiles) pdfs.Add(await ToUploadedFile(f));
+
+        foreach (var file in pdfFiles)
+        {
+            pdfs.Add(await ToUploadedFile(file));
+        }
 
         var result = await _mediator.Send(
-            new ProcessDossierCommand(dossierReference, companyName, enterpriseNumber, companyAddressLine,
-                companyPostalCode, companyCity, companyCountry, refundApplicationDate, excel, pdfs), ct);
+            new ProcessDossierCommand(
+                dossierReference,
+                companyName,
+                enterpriseNumber,
+                companyAddressLine,
+                companyPostalCode,
+                companyCity,
+                companyCountry,
+                refundApplicationDate,
+                excel,
+                pdfs),
+            ct);
 
         return Ok(result);
     }
@@ -91,16 +118,33 @@ public class DossiersController : ControllerBase
     [HttpPost("documents/{documentId:guid}/ai-assist")]
     [Authorize(Policy = PermissionCodes.DossierAiAssist)]
     public async Task<ActionResult<BARD.Application.AiAssist.AiAssistResult>> RequestAiAssist(
-        Guid documentId, [FromBody] IReadOnlyList<string> fieldsNeeded, CancellationToken ct)
+        Guid documentId,
+        [FromBody] IReadOnlyList<string> fieldsNeeded,
+        CancellationToken ct)
     {
-        var document = await _db.DossierDocuments.FirstOrDefaultAsync(d => d.Id == documentId, ct);
-        if (document is null) return NotFound();
+        var document = await _db.DossierDocuments
+            .FirstOrDefaultAsync(d => d.Id == documentId, ct);
 
-        using var stream = await _blobStorage.DownloadAsync(document.BlobStoragePath, ct);
-        var extraction = await _pdfTextExtraction.ExtractAsync(stream, document.OriginalFileName, ct);
+        if (document is null)
+        {
+            return NotFound();
+        }
+
+        using var stream = await _blobStorage.DownloadAsync(
+            document.BlobStoragePath,
+            ct);
+
+        var extraction = await _pdfTextExtraction.ExtractAsync(
+            stream,
+            document.OriginalFileName,
+            ct);
 
         var result = await _mediator.Send(
-            new RequestAiAssistExtractionCommand(documentId, extraction.FullText, fieldsNeeded), ct);
+            new RequestAiAssistExtractionCommand(
+                documentId,
+                extraction.FullText,
+                fieldsNeeded),
+            ct);
 
         return Ok(result);
     }
@@ -113,10 +157,16 @@ public class DossiersController : ControllerBase
     /// </summary>
     [HttpGet("{id:guid}/export")]
     [Authorize(Policy = PermissionCodes.DossierView)]
-    public async Task<IActionResult> Export(Guid id, CancellationToken ct)
+    public async Task<IActionResult> Export(
+        Guid id,
+        CancellationToken ct)
     {
         var result = await _exportService.GenerateReportAsync(id, ct);
-        return File(result.Content, result.ContentType, result.FileName);
+
+        return File(
+            result.Content,
+            result.ContentType,
+            result.FileName);
     }
 
     /// <summary>
@@ -126,9 +176,14 @@ public class DossiersController : ControllerBase
     /// </summary>
     [HttpPost("lines/decision")]
     [Authorize(Policy = PermissionCodes.DossierReview)]
-    public async Task<IActionResult> RecordOfficerDecision([FromBody] RecordOfficerDecisionRequest request, CancellationToken ct)
+    public async Task<IActionResult> RecordOfficerDecision(
+        [FromBody] RecordOfficerDecisionRequest request,
+        CancellationToken ct)
     {
-        await _mediator.Send(new RecordOfficerDecisionCommand(request), ct);
+        await _mediator.Send(
+            new RecordOfficerDecisionCommand(request),
+            ct);
+
         return NoContent();
     }
 }
