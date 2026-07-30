@@ -89,6 +89,7 @@ public class ProcessDossierCommandHandler
     private readonly IBlobStorageService _blobStorage;
     private readonly IExcelClaimReaderService _excelReader;
     private readonly IDocumentClassifierService _documentClassifier;
+    private readonly IDocumentRoleClassifierService _documentRoleClassifier;
     private readonly IInvoiceParsingService _invoiceParser;
     private readonly IAc4ParsingService _ac4Parser;
     private readonly IMatchingService _matchingService;
@@ -106,6 +107,7 @@ public class ProcessDossierCommandHandler
         IBlobStorageService blobStorage,
         IExcelClaimReaderService excelReader,
         IDocumentClassifierService documentClassifier,
+        IDocumentRoleClassifierService documentRoleClassifier,
         IInvoiceParsingService invoiceParser,
         IAc4ParsingService ac4Parser,
         IMatchingService matchingService,
@@ -121,6 +123,7 @@ public class ProcessDossierCommandHandler
         _blobStorage = blobStorage;
         _excelReader = excelReader;
         _documentClassifier = documentClassifier;
+        _documentRoleClassifier = documentRoleClassifier;
         _invoiceParser = invoiceParser;
         _ac4Parser = ac4Parser;
         _matchingService = matchingService;
@@ -377,6 +380,7 @@ public class ProcessDossierCommandHandler
             classifications,
             invoices,
             ac4Declarations,
+            excelRows,
             ct);
 
         dossier.RecomputeStatusFromLines(
@@ -524,10 +528,15 @@ public class ProcessDossierCommandHandler
                 excelFile.Content.Length,
                 _currentUser.UserId);
 
-        document.SetClassification(
-            DocumentType.CompanyExcelClaim,
+        document.SetDocumentKind(
+            DocumentKind.CompanyExcelClaim,
             1.0m,
             "Uploaded as the company Excel refund claim.");
+
+        document.SetDocumentRole(
+            DocumentRole.RefundClaim,
+            1.0m,
+            "The uploaded Excel document forms the basis of the refund claim.");
 
         document.SetExtractionResult(
             ExtractionMethod.ClassicalTextExtraction,
@@ -544,6 +553,7 @@ public class ProcessDossierCommandHandler
         List<DocumentClassificationResult> classifications,
         List<ParsedInvoice> invoices,
         List<ParsedAc4Declaration> ac4Declarations,
+        IReadOnlyList<ParsedExcelClaimRow> excelRows,
         CancellationToken ct)
     {
         foreach (var pdfFile in pdfFiles)
@@ -586,21 +596,40 @@ public class ProcessDossierCommandHandler
                     pdfFile.Content.Length,
                     _currentUser.UserId);
 
-            document.SetClassification(
-                classification.DocumentType,
+            document.SetDocumentKind(
+                classification.DocumentKind,
                 classification.Confidence,
                 string.Join(
                     " ",
                     classification.Reasons));
 
-            if (classification.DocumentType
-                == DocumentType.SalesInvoice)
-            {
-                var invoice =
-                    invoices.FirstOrDefault(
-                        i => i.SourceFile
-                             == pdfFile.FileName);
+            var invoice =
+                invoices.FirstOrDefault(
+                    i => i.SourceFile
+                         == pdfFile.FileName);
 
+            var ac4 =
+                ac4Declarations.FirstOrDefault(
+                    a => a.SourceFile
+                         == pdfFile.FileName);
+
+            var roleClassification =
+                _documentRoleClassifier.ClassifyRole(
+                    classification,
+                    invoice,
+                    ac4,
+                    excelRows);
+
+            document.SetDocumentRole(
+                roleClassification.DocumentRole,
+                roleClassification.Confidence,
+                string.Join(
+                    " ",
+                    roleClassification.Reasons));
+
+            if (classification.DocumentKind
+                == DocumentKind.Invoice)
+            {
                 if (invoice is not null)
                 {
                     document.SetExtractionResult(
@@ -619,15 +648,10 @@ public class ProcessDossierCommandHandler
                         invoice);
                 }
             }
-            else if (classification.DocumentType
-                     is DocumentType.Ac4Declaration
-                     or DocumentType.EadEVadDocument)
+            else if (classification.DocumentKind
+                     is DocumentKind.Ac4Declaration
+                     or DocumentKind.EadEVadDocument)
             {
-                var ac4 =
-                    ac4Declarations.FirstOrDefault(
-                        a => a.SourceFile
-                             == pdfFile.FileName);
-
                 if (ac4 is not null)
                 {
                     document.SetExtractionResult(

@@ -41,6 +41,7 @@ public class DossierDocument : AuditableEntity
     public bool OcrWasRequired { get; private set; }
 
     private readonly List<ExtractedField> _extractedFields = new();
+
     public IReadOnlyCollection<ExtractedField> ExtractedFields =>
         _extractedFields.AsReadOnly();
 
@@ -71,6 +72,7 @@ public class DossierDocument : AuditableEntity
             RoleConfirmedByUser = false,
 
             DocumentType = DocumentType.Unknown,
+            ClassificationConfidence = 0m,
 
             CreatedAtUtc = DateTime.UtcNow,
             CreatedByUserId = uploadedByUserId,
@@ -79,7 +81,9 @@ public class DossierDocument : AuditableEntity
 
     /// <summary>
     /// Sets the intrinsic kind of the document.
-    /// This classification must not depend on the dossier context.
+    ///
+    /// The legacy DocumentType value is kept in sync while the existing
+    /// processing pipeline still depends on it.
     /// </summary>
     public void SetDocumentKind(
         DocumentKind kind,
@@ -87,6 +91,7 @@ public class DossierDocument : AuditableEntity
         string? reasons)
     {
         DocumentKind = kind;
+        DocumentType = MapToLegacyDocumentType(kind);
         ClassificationConfidence = confidence;
         ClassificationReasons = reasons;
     }
@@ -122,13 +127,16 @@ public class DossierDocument : AuditableEntity
     /// <summary>
     /// Legacy classification method retained temporarily while the existing
     /// processing pipeline is migrated.
+    ///
+    /// The new DocumentKind value is also kept in sync.
     /// </summary>
     public void SetClassification(
         DocumentType type,
         decimal confidence,
-        string reasons)
+        string? reasons)
     {
         DocumentType = type;
+        DocumentKind = MapFromLegacyDocumentType(type);
         ClassificationConfidence = confidence;
         ClassificationReasons = reasons;
     }
@@ -163,6 +171,56 @@ public class DossierDocument : AuditableEntity
         _extractedFields.Add(field);
 
         return field;
+    }
+
+    private static DocumentType MapToLegacyDocumentType(
+        DocumentKind kind)
+    {
+        return kind switch
+        {
+            DocumentKind.Invoice
+                => DocumentType.SalesInvoice,
+
+            DocumentKind.Ac4Declaration
+                => DocumentType.Ac4Declaration,
+
+            DocumentKind.EadEVadDocument
+                => DocumentType.EadEVadDocument,
+
+            DocumentKind.CompanyExcelClaim
+                => DocumentType.CompanyExcelClaim,
+
+            DocumentKind.SupportingEvidence
+                => DocumentType.SupportingEvidence,
+
+            _
+                => DocumentType.Unknown,
+        };
+    }
+
+    private static DocumentKind MapFromLegacyDocumentType(
+        DocumentType type)
+    {
+        return type switch
+        {
+            DocumentType.SalesInvoice
+                => DocumentKind.Invoice,
+
+            DocumentType.Ac4Declaration
+                => DocumentKind.Ac4Declaration,
+
+            DocumentType.EadEVadDocument
+                => DocumentKind.EadEVadDocument,
+
+            DocumentType.CompanyExcelClaim
+                => DocumentKind.CompanyExcelClaim,
+
+            DocumentType.SupportingEvidence
+                => DocumentKind.SupportingEvidence,
+
+            _
+                => DocumentKind.Unknown,
+        };
     }
 }
 
