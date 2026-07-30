@@ -51,108 +51,13 @@ public record ParsedAc4Declaration(
 /// Result of the intrinsic document-kind classification stage.
 ///
 /// DocumentKind describes what the document physically is.
-/// DocumentType remains temporarily available for compatibility while
-/// the existing processing pipeline is migrated.
 /// </summary>
-public sealed record DocumentClassificationResult
-{
-    public string FileName { get; }
-
-    public DocumentKind DocumentKind { get; }
-
-    public decimal Confidence { get; }
-
-    public IReadOnlyList<string> Reasons { get; }
-
-    /// <summary>
-    /// Temporary compatibility property for code that still consumes
-    /// the legacy DocumentType enum.
-    /// </summary>
-    public DocumentType DocumentType =>
-        MapToLegacyDocumentType(DocumentKind);
-
-    /// <summary>
-    /// Preferred constructor for new classification code.
-    /// </summary>
-    public DocumentClassificationResult(
-        string fileName,
-        DocumentKind documentKind,
-        decimal confidence,
-        IReadOnlyList<string> reasons)
-    {
-        FileName = fileName;
-        DocumentKind = documentKind;
-        Confidence = confidence;
-        Reasons = reasons;
-    }
-
-    /// <summary>
-    /// Temporary compatibility constructor for code that still creates
-    /// results with the legacy DocumentType enum.
-    /// </summary>
-    public DocumentClassificationResult(
-        string fileName,
-        DocumentType documentType,
-        decimal confidence,
-        IReadOnlyList<string> reasons)
-        : this(
-            fileName,
-            MapFromLegacyDocumentType(documentType),
-            confidence,
-            reasons)
-    {
-    }
-
-    private static DocumentType MapToLegacyDocumentType(
-        DocumentKind documentKind)
-    {
-        return documentKind switch
-        {
-            DocumentKind.Invoice =>
-                DocumentType.SalesInvoice,
-
-            DocumentKind.Ac4Declaration =>
-                DocumentType.Ac4Declaration,
-
-            DocumentKind.EadEVadDocument =>
-                DocumentType.EadEVadDocument,
-
-            DocumentKind.CompanyExcelClaim =>
-                DocumentType.CompanyExcelClaim,
-
-            DocumentKind.SupportingEvidence =>
-                DocumentType.SupportingEvidence,
-
-            _ =>
-                DocumentType.Unknown,
-        };
-    }
-
-    private static DocumentKind MapFromLegacyDocumentType(
-        DocumentType documentType)
-    {
-        return documentType switch
-        {
-            DocumentType.SalesInvoice =>
-                DocumentKind.Invoice,
-
-            DocumentType.Ac4Declaration =>
-                DocumentKind.Ac4Declaration,
-
-            DocumentType.EadEVadDocument =>
-                DocumentKind.EadEVadDocument,
-
-            DocumentType.CompanyExcelClaim =>
-                DocumentKind.CompanyExcelClaim,
-
-            DocumentType.SupportingEvidence =>
-                DocumentKind.SupportingEvidence,
-
-            _ =>
-                DocumentKind.Unknown,
-        };
-    }
-}
+public sealed record DocumentClassificationResult(
+    string FileName,
+    DocumentKind DocumentKind,
+    decimal Confidence,
+    IReadOnlyList<string> Reasons
+);
 
 /// <summary>
 /// Result of the contextual document-role classification stage.
