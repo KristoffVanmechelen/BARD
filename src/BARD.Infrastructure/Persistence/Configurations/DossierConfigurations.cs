@@ -11,12 +11,21 @@ public class DossierConfiguration : IEntityTypeConfiguration<Dossier>
         builder.ToTable("Dossiers", schema: "dossier");
         builder.HasKey(d => d.Id);
 
-        builder.Property(d => d.DossierReference).HasMaxLength(50).IsRequired();
-        builder.HasIndex(d => d.DossierReference).IsUnique();
+        builder.Property(d => d.DossierReference)
+            .HasMaxLength(50)
+            .IsRequired();
+
+        builder.HasIndex(d => d.DossierReference)
+            .IsUnique();
+
         builder.HasIndex(d => d.CompanyId);
 
-        builder.Property(d => d.Status).HasConversion<string>().HasMaxLength(50);
-        builder.Property(d => d.RowVersion).IsRowVersion();
+        builder.Property(d => d.Status)
+            .HasConversion<string>()
+            .HasMaxLength(50);
+
+        builder.Property(d => d.RowVersion)
+            .IsRowVersion();
 
         builder.HasMany(d => d.Lines)
             .WithOne()
@@ -46,22 +55,40 @@ public class DossierConfiguration : IEntityTypeConfiguration<Dossier>
     }
 }
 
-public class DossierLineConfiguration : IEntityTypeConfiguration<DossierLine>
+public class DossierLineConfiguration
+    : IEntityTypeConfiguration<DossierLine>
 {
     public void Configure(EntityTypeBuilder<DossierLine> builder)
     {
         builder.ToTable("DossierLines", schema: "dossier");
         builder.HasKey(l => l.Id);
 
-        builder.Property(l => l.ClaimedInvoiceNumber).HasMaxLength(100);
-        builder.Property(l => l.ExciseCode).HasMaxLength(20);
-        builder.Property(l => l.Mrn).HasMaxLength(30);
-        builder.Property(l => l.ClaimedDestinationCountry).HasMaxLength(2);
-        builder.Property(l => l.ClaimedQuantity).HasColumnType("decimal(18,4)");
-        builder.Property(l => l.ConfidenceScore).HasColumnType("decimal(5,2)");
-        builder.Property(l => l.AppliedRate).HasColumnType("decimal(18,6)");
-        builder.Property(l => l.CalculatedRefundAmount).HasColumnType("decimal(18,2)");
-        builder.Property(l => l.CalculationNotes).HasColumnType("nvarchar(max)");
+        builder.Property(l => l.ClaimedInvoiceNumber)
+            .HasMaxLength(100);
+
+        builder.Property(l => l.ExciseCode)
+            .HasMaxLength(20);
+
+        builder.Property(l => l.Mrn)
+            .HasMaxLength(30);
+
+        builder.Property(l => l.ClaimedDestinationCountry)
+            .HasMaxLength(2);
+
+        builder.Property(l => l.ClaimedQuantity)
+            .HasColumnType("decimal(18,4)");
+
+        builder.Property(l => l.ConfidenceScore)
+            .HasColumnType("decimal(5,2)");
+
+        builder.Property(l => l.AppliedRate)
+            .HasColumnType("decimal(18,6)");
+
+        builder.Property(l => l.CalculatedRefundAmount)
+            .HasColumnType("decimal(18,2)");
+
+        builder.Property(l => l.CalculationNotes)
+            .HasColumnType("nvarchar(max)");
 
         builder.Property(l => l.MatchStatus)
             .HasConversion<string>()
@@ -93,7 +120,8 @@ public class DossierLineConfiguration : IEntityTypeConfiguration<DossierLine>
     }
 }
 
-public class DossierDocumentConfiguration : IEntityTypeConfiguration<DossierDocument>
+public class DossierDocumentConfiguration
+    : IEntityTypeConfiguration<DossierDocument>
 {
     public void Configure(EntityTypeBuilder<DossierDocument> builder)
     {
@@ -126,9 +154,7 @@ public class DossierDocumentConfiguration : IEntityTypeConfiguration<DossierDocu
         builder.Property(d => d.RoleReasons)
             .HasColumnType("nvarchar(max)");
 
-        builder.Property(d => d.DocumentType)
-            .HasConversion<string>()
-            .HasMaxLength(30);
+        builder.Ignore(d => d.DocumentType);
 
         builder.Property(d => d.ClassificationConfidence)
             .HasColumnType("decimal(5,4)");
@@ -160,7 +186,8 @@ public class DossierDocumentConfiguration : IEntityTypeConfiguration<DossierDocu
     }
 }
 
-public class ExtractedFieldConfiguration : IEntityTypeConfiguration<ExtractedField>
+public class ExtractedFieldConfiguration
+    : IEntityTypeConfiguration<ExtractedField>
 {
     public void Configure(EntityTypeBuilder<ExtractedField> builder)
     {
