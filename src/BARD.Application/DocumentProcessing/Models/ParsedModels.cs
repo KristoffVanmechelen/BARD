@@ -47,13 +47,111 @@ public record ParsedAc4Declaration(
     string RawText
 );
 
-/// <summary>Ports core/ingestion/document_classifier.py's DocumentClassification.</summary>
-public record DocumentClassificationResult(
-    string FileName,
-    DocumentType DocumentType,
-    decimal Confidence,
-    IReadOnlyList<string> Reasons
-);
+/// <summary>
+/// Result of the document-kind classification stage.
+///
+/// DocumentKind describes what the document physically is.
+/// DocumentType remains temporarily available as a legacy compatibility
+/// property while the rest of the processing pipeline is migrated.
+/// </summary>
+public sealed record DocumentClassificationResult
+{
+    public string FileName { get; }
+
+    public DocumentKind DocumentKind { get; }
+
+    public decimal Confidence { get; }
+
+    public IReadOnlyList<string> Reasons { get; }
+
+    /// <summary>
+    /// Temporary compatibility property for code that still consumes
+    /// the legacy DocumentType enum.
+    /// </summary>
+    public DocumentType DocumentType => MapToLegacyDocumentType(DocumentKind);
+
+    /// <summary>
+    /// Preferred constructor for new classification code.
+    /// </summary>
+    public DocumentClassificationResult(
+        string fileName,
+        DocumentKind documentKind,
+        decimal confidence,
+        IReadOnlyList<string> reasons)
+    {
+        FileName = fileName;
+        DocumentKind = documentKind;
+        Confidence = confidence;
+        Reasons = reasons;
+    }
+
+    /// <summary>
+    /// Temporary compatibility constructor for code that still creates
+    /// classification results with the legacy DocumentType enum.
+    /// </summary>
+    public DocumentClassificationResult(
+        string fileName,
+        DocumentType documentType,
+        decimal confidence,
+        IReadOnlyList<string> reasons)
+        : this(
+            fileName,
+            MapFromLegacyDocumentType(documentType),
+            confidence,
+            reasons)
+    {
+    }
+
+    private static DocumentType MapToLegacyDocumentType(
+        DocumentKind documentKind)
+    {
+        return documentKind switch
+        {
+            DocumentKind.Invoice
+                => DocumentType.SalesInvoice,
+
+            DocumentKind.Ac4Declaration
+                => DocumentType.Ac4Declaration,
+
+            DocumentKind.EadEVadDocument
+                => DocumentType.EadEVadDocument,
+
+            DocumentKind.CompanyExcelClaim
+                => DocumentType.CompanyExcelClaim,
+
+            DocumentKind.SupportingEvidence
+                => DocumentType.SupportingEvidence,
+
+            _
+                => DocumentType.Unknown,
+        };
+    }
+
+    private static DocumentKind MapFromLegacyDocumentType(
+        DocumentType documentType)
+    {
+        return documentType switch
+        {
+            DocumentType.SalesInvoice
+                => DocumentKind.Invoice,
+
+            DocumentType.Ac4Declaration
+                => DocumentKind.Ac4Declaration,
+
+            DocumentType.EadEVadDocument
+                => DocumentKind.EadEVadDocument,
+
+            DocumentType.CompanyExcelClaim
+                => DocumentKind.CompanyExcelClaim,
+
+            DocumentType.SupportingEvidence
+                => DocumentKind.SupportingEvidence,
+
+            _
+                => DocumentKind.Unknown,
+        };
+    }
+}
 
 /// <summary>Ports core/ingestion/excel_reader.py's ExcelRow.</summary>
 public record ParsedExcelClaimRow(
@@ -71,21 +169,42 @@ public record ParsedExcelClaimRow(
 /// Per-page text + detected tables from classical PDF extraction. Ports
 /// core/ingestion/pdf_reader.py's PageExtraction/PDFExtraction.
 /// </summary>
-public record PdfPageExtraction(int PageNumber, string Text, IReadOnlyList<IReadOnlyList<string>> TableRows);
+public record PdfPageExtraction(
+    int PageNumber,
+    string Text,
+    IReadOnlyList<IReadOnlyList<string>> TableRows
+);
 
-public record PdfExtractionResult(string SourceFile, IReadOnlyList<PdfPageExtraction> Pages)
+public record PdfExtractionResult(
+    string SourceFile,
+    IReadOnlyList<PdfPageExtraction> Pages)
 {
-    public string FullText => string.Join("\n", Pages.Select(p => p.Text));
-    public IReadOnlyList<string> PageTexts => Pages.Select(p => p.Text).ToList();
+    public string FullText =>
+        string.Join("\n", Pages.Select(p => p.Text));
+
+    public IReadOnlyList<string> PageTexts =>
+        Pages.Select(p => p.Text).ToList();
 }
 
 /// <summary>Ports core/ingestion/ocr_detector.py's DocumentOCRAssessment.</summary>
-public record PageOcrAssessment(int PageNumber, int TextCharCount, bool NeedsOcr);
+public record PageOcrAssessment(
+    int PageNumber,
+    int TextCharCount,
+    bool NeedsOcr
+);
 
-public record DocumentOcrAssessment(int TotalPages, IReadOnlyList<PageOcrAssessment> Pages)
+public record DocumentOcrAssessment(
+    int TotalPages,
+    IReadOnlyList<PageOcrAssessment> Pages)
 {
-    public bool AnyPageNeedsOcr => Pages.Any(p => p.NeedsOcr);
-    public IReadOnlyList<int> PagesNeedingOcr => Pages.Where(p => p.NeedsOcr).Select(p => p.PageNumber).ToList();
+    public bool AnyPageNeedsOcr =>
+        Pages.Any(p => p.NeedsOcr);
+
+    public IReadOnlyList<int> PagesNeedingOcr =>
+        Pages
+            .Where(p => p.NeedsOcr)
+            .Select(p => p.PageNumber)
+            .ToList();
 }
 
 /// <summary>Ports core/matching/scoring.py's ScoreBreakdown.</summary>
@@ -105,7 +224,10 @@ public record ScoreBreakdown(
     IReadOnlyList<string> Notes
 );
 
-/// <summary>Ports core/matching/matcher.py's MatchResult (transient — pre-persistence).</summary>
+/// <summary>
+/// Ports core/matching/matcher.py's MatchResult
+/// (transient — pre-persistence).
+/// </summary>
 public record MatchResult(
     ParsedExcelClaimRow ExcelRow,
     ParsedInvoice? MatchedInvoice,
