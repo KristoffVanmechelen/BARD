@@ -6,10 +6,11 @@ namespace BARD.Domain.Entities;
 /// <summary>
 /// Structured data parsed from an AC4 (or eAD/eVAD) declaration
 /// document. One-to-one with a DossierDocument classified as
-/// DocumentType.Ac4Declaration or EadEVadDocument. Kept as a dedicated
-/// entity (rather than folded into generic ExtractedField rows) because
-/// AC4 matching (MRN cumulative validation, deadline check) is a
-/// first-class documented business process, not incidental metadata.
+/// DocumentKind.Ac4Declaration or DocumentKind.EadEVadDocument. Kept as
+/// a dedicated entity (rather than folded into generic ExtractedField
+/// rows) because AC4 matching (MRN cumulative validation, deadline
+/// check) is a first-class documented business process, not incidental
+/// metadata.
 /// </summary>
 public class Ac4Declaration : Entity
 {
@@ -27,9 +28,17 @@ public class Ac4Declaration : Entity
 
     protected Ac4Declaration() { }
 
-    public static Ac4Declaration Create(Guid dossierDocumentId, string? mrn, DateOnly? ac4Date,
-        string? consignee, string? productDescription, decimal? quantity, string? exciseCode,
-        ExtractionMethod extractionMethod, decimal extractionConfidence, string? extractionWarnings) =>
+    public static Ac4Declaration Create(
+        Guid dossierDocumentId,
+        string? mrn,
+        DateOnly? ac4Date,
+        string? consignee,
+        string? productDescription,
+        decimal? quantity,
+        string? exciseCode,
+        ExtractionMethod extractionMethod,
+        decimal extractionConfidence,
+        string? extractionWarnings) =>
         new()
         {
             Id = Guid.NewGuid(),
