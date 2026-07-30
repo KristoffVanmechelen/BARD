@@ -89,20 +89,6 @@ public enum DocumentRole
     Irrelevant = 7,
 }
 
-/// <summary>
-/// Legacy classification.
-/// Kept temporarily while migrating to DocumentKind + DocumentRole.
-/// </summary>
-public enum DocumentType
-{
-    Unknown = 0,
-    SalesInvoice = 1,
-    Ac4Declaration = 2,
-    EadEVadDocument = 3,
-    CompanyExcelClaim = 4,
-    SupportingEvidence = 5,
-}
-
 public enum UiLanguage
 {
     NlBe = 0,
