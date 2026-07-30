@@ -48,11 +48,11 @@ public record ParsedAc4Declaration(
 );
 
 /// <summary>
-/// Result of the document-kind classification stage.
+/// Result of the intrinsic document-kind classification stage.
 ///
 /// DocumentKind describes what the document physically is.
-/// DocumentType remains temporarily available as a legacy compatibility
-/// property while the rest of the processing pipeline is migrated.
+/// DocumentType remains temporarily available for compatibility while
+/// the existing processing pipeline is migrated.
 /// </summary>
 public sealed record DocumentClassificationResult
 {
@@ -68,7 +68,8 @@ public sealed record DocumentClassificationResult
     /// Temporary compatibility property for code that still consumes
     /// the legacy DocumentType enum.
     /// </summary>
-    public DocumentType DocumentType => MapToLegacyDocumentType(DocumentKind);
+    public DocumentType DocumentType =>
+        MapToLegacyDocumentType(DocumentKind);
 
     /// <summary>
     /// Preferred constructor for new classification code.
@@ -87,7 +88,7 @@ public sealed record DocumentClassificationResult
 
     /// <summary>
     /// Temporary compatibility constructor for code that still creates
-    /// classification results with the legacy DocumentType enum.
+    /// results with the legacy DocumentType enum.
     /// </summary>
     public DocumentClassificationResult(
         string fileName,
@@ -107,23 +108,23 @@ public sealed record DocumentClassificationResult
     {
         return documentKind switch
         {
-            DocumentKind.Invoice
-                => DocumentType.SalesInvoice,
+            DocumentKind.Invoice =>
+                DocumentType.SalesInvoice,
 
-            DocumentKind.Ac4Declaration
-                => DocumentType.Ac4Declaration,
+            DocumentKind.Ac4Declaration =>
+                DocumentType.Ac4Declaration,
 
-            DocumentKind.EadEVadDocument
-                => DocumentType.EadEVadDocument,
+            DocumentKind.EadEVadDocument =>
+                DocumentType.EadEVadDocument,
 
-            DocumentKind.CompanyExcelClaim
-                => DocumentType.CompanyExcelClaim,
+            DocumentKind.CompanyExcelClaim =>
+                DocumentType.CompanyExcelClaim,
 
-            DocumentKind.SupportingEvidence
-                => DocumentType.SupportingEvidence,
+            DocumentKind.SupportingEvidence =>
+                DocumentType.SupportingEvidence,
 
-            _
-                => DocumentType.Unknown,
+            _ =>
+                DocumentType.Unknown,
         };
     }
 
@@ -132,26 +133,39 @@ public sealed record DocumentClassificationResult
     {
         return documentType switch
         {
-            DocumentType.SalesInvoice
-                => DocumentKind.Invoice,
+            DocumentType.SalesInvoice =>
+                DocumentKind.Invoice,
 
-            DocumentType.Ac4Declaration
-                => DocumentKind.Ac4Declaration,
+            DocumentType.Ac4Declaration =>
+                DocumentKind.Ac4Declaration,
 
-            DocumentType.EadEVadDocument
-                => DocumentKind.EadEVadDocument,
+            DocumentType.EadEVadDocument =>
+                DocumentKind.EadEVadDocument,
 
-            DocumentType.CompanyExcelClaim
-                => DocumentKind.CompanyExcelClaim,
+            DocumentType.CompanyExcelClaim =>
+                DocumentKind.CompanyExcelClaim,
 
-            DocumentType.SupportingEvidence
-                => DocumentKind.SupportingEvidence,
+            DocumentType.SupportingEvidence =>
+                DocumentKind.SupportingEvidence,
 
-            _
-                => DocumentKind.Unknown,
+            _ =>
+                DocumentKind.Unknown,
         };
     }
 }
+
+/// <summary>
+/// Result of the contextual document-role classification stage.
+///
+/// DocumentRole describes the function fulfilled by the document within
+/// the dossier. It must be determined after the intrinsic DocumentKind.
+/// </summary>
+public sealed record DocumentRoleClassificationResult(
+    string FileName,
+    DocumentRole DocumentRole,
+    decimal Confidence,
+    IReadOnlyList<string> Reasons
+);
 
 /// <summary>Ports core/ingestion/excel_reader.py's ExcelRow.</summary>
 public record ParsedExcelClaimRow(
