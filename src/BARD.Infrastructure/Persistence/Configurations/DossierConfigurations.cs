@@ -33,9 +33,14 @@ public class DossierConfiguration : IEntityTypeConfiguration<Dossier>
             .HasForeignKey(h => h.DossierId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        builder.Navigation(d => d.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
-        builder.Navigation(d => d.Documents).UsePropertyAccessMode(PropertyAccessMode.Field);
-        builder.Navigation(d => d.StatusHistory).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.Navigation(d => d.Lines)
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        builder.Navigation(d => d.Documents)
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        builder.Navigation(d => d.StatusHistory)
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
 
         builder.Ignore(d => d.DomainEvents);
     }
@@ -58,12 +63,29 @@ public class DossierLineConfiguration : IEntityTypeConfiguration<DossierLine>
         builder.Property(l => l.CalculatedRefundAmount).HasColumnType("decimal(18,2)");
         builder.Property(l => l.CalculationNotes).HasColumnType("nvarchar(max)");
 
-        builder.Property(l => l.MatchStatus).HasConversion<string>().HasMaxLength(30);
-        builder.Property(l => l.ExportStatus).HasConversion<string>().HasMaxLength(30);
-        builder.Property(l => l.MrnCumulativeStatus).HasConversion<string>().HasMaxLength(30);
-        builder.Property(l => l.Ac4Status).HasConversion<string>().HasMaxLength(30);
-        builder.Property(l => l.OfficerDecision).HasConversion<string>().HasMaxLength(30);
-        builder.Property(l => l.AppliedCalculationUnit).HasConversion<string>().HasMaxLength(50);
+        builder.Property(l => l.MatchStatus)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
+        builder.Property(l => l.ExportStatus)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
+        builder.Property(l => l.MrnCumulativeStatus)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
+        builder.Property(l => l.Ac4Status)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
+        builder.Property(l => l.OfficerDecision)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
+        builder.Property(l => l.AppliedCalculationUnit)
+            .HasConversion<string>()
+            .HasMaxLength(50);
 
         builder.HasIndex(l => l.DossierId);
         builder.HasIndex(l => l.Mrn);
@@ -78,22 +100,63 @@ public class DossierDocumentConfiguration : IEntityTypeConfiguration<DossierDocu
         builder.ToTable("DossierDocuments", schema: "dossier");
         builder.HasKey(d => d.Id);
 
-        builder.Property(d => d.OriginalFileName).HasMaxLength(500).IsRequired();
-        builder.Property(d => d.BlobStoragePath).HasMaxLength(1000).IsRequired();
-        builder.Property(d => d.ContentHash).HasMaxLength(64).IsRequired();
-        builder.Property(d => d.DocumentType).HasConversion<string>().HasMaxLength(30);
-        builder.Property(d => d.ExtractionMethod).HasConversion<string>().HasMaxLength(30);
-        builder.Property(d => d.ClassificationConfidence).HasColumnType("decimal(5,4)");
-        builder.Property(d => d.ExtractionConfidence).HasColumnType("decimal(5,4)");
+        builder.Property(d => d.OriginalFileName)
+            .HasMaxLength(500)
+            .IsRequired();
+
+        builder.Property(d => d.BlobStoragePath)
+            .HasMaxLength(1000)
+            .IsRequired();
+
+        builder.Property(d => d.ContentHash)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        builder.Property(d => d.DocumentKind)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
+        builder.Property(d => d.DocumentRole)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
+        builder.Property(d => d.RoleConfidence)
+            .HasColumnType("decimal(5,4)");
+
+        builder.Property(d => d.RoleReasons)
+            .HasColumnType("nvarchar(max)");
+
+        builder.Property(d => d.DocumentType)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
+        builder.Property(d => d.ClassificationConfidence)
+            .HasColumnType("decimal(5,4)");
+
+        builder.Property(d => d.ClassificationReasons)
+            .HasColumnType("nvarchar(max)");
+
+        builder.Property(d => d.ExtractionMethod)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
+        builder.Property(d => d.ExtractionConfidence)
+            .HasColumnType("decimal(5,4)");
+
+        builder.Property(d => d.ExtractionWarnings)
+            .HasColumnType("nvarchar(max)");
 
         builder.HasMany(d => d.ExtractedFields)
             .WithOne()
             .HasForeignKey(f => f.DossierDocumentId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.Navigation(d => d.ExtractedFields).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.Navigation(d => d.ExtractedFields)
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
 
         builder.HasIndex(d => d.ContentHash);
+        builder.HasIndex(d => d.DocumentKind);
+        builder.HasIndex(d => d.DocumentRole);
     }
 }
 
@@ -103,18 +166,30 @@ public class ExtractedFieldConfiguration : IEntityTypeConfiguration<ExtractedFie
     {
         builder.ToTable("ExtractedFields", schema: "dossier");
         builder.HasKey(f => f.Id);
-        builder.Property(f => f.FieldName).HasMaxLength(100).IsRequired();
-        builder.Property(f => f.Confidence).HasColumnType("decimal(5,4)");
+
+        builder.Property(f => f.FieldName)
+            .HasMaxLength(100)
+            .IsRequired();
+
+        builder.Property(f => f.Confidence)
+            .HasColumnType("decimal(5,4)");
     }
 }
 
-public class DossierStatusHistoryEntryConfiguration : IEntityTypeConfiguration<DossierStatusHistoryEntry>
+public class DossierStatusHistoryEntryConfiguration
+    : IEntityTypeConfiguration<DossierStatusHistoryEntry>
 {
-    public void Configure(EntityTypeBuilder<DossierStatusHistoryEntry> builder)
+    public void Configure(
+        EntityTypeBuilder<DossierStatusHistoryEntry> builder)
     {
         builder.ToTable("DossierStatusHistory", schema: "dossier");
         builder.HasKey(h => h.Id);
-        builder.Property(h => h.Status).HasConversion<string>().HasMaxLength(30);
-        builder.Property(h => h.Reason).HasMaxLength(1000);
+
+        builder.Property(h => h.Status)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
+        builder.Property(h => h.Reason)
+            .HasMaxLength(1000);
     }
 }
