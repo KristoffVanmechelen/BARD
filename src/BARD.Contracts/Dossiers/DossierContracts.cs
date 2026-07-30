@@ -67,7 +67,7 @@ public record DossierDetailDto(
 public record DossierDocumentDto(
     Guid Id,
     string OriginalFileName,
-    string DocumentType,
+    string DocumentKind,
     decimal ClassificationConfidence,
     string ExtractionMethod,
     decimal ExtractionConfidence,
