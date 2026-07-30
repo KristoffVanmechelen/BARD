@@ -154,8 +154,6 @@ public class DossierDocumentConfiguration
         builder.Property(d => d.RoleReasons)
             .HasColumnType("nvarchar(max)");
 
-        builder.Ignore(d => d.DocumentType);
-
         builder.Property(d => d.ClassificationConfidence)
             .HasColumnType("decimal(5,4)");
 
