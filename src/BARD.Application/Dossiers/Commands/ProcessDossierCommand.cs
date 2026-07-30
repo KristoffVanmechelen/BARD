@@ -198,9 +198,9 @@ public class ProcessDossierCommandHandler
             using var parseStream =
                 new MemoryStream(pdfFile.Content);
 
-            switch (classification.DocumentType)
+            switch (classification.DocumentKind)
             {
-                case DocumentType.SalesInvoice:
+                case DocumentKind.Invoice:
                     invoices.Add(
                         await _invoiceParser.ParseAsync(
                             parseStream,
@@ -208,8 +208,8 @@ public class ProcessDossierCommandHandler
                             ct));
                     break;
 
-                case DocumentType.Ac4Declaration:
-                case DocumentType.EadEVadDocument:
+                case DocumentKind.Ac4Declaration:
+                case DocumentKind.EadEVadDocument:
                     ac4Declarations.Add(
                         await _ac4Parser.ParseAsync(
                             parseStream,
@@ -567,10 +567,10 @@ public class ProcessDossierCommandHandler
                     SHA256.HashData(pdfFile.Content));
 
             var containerName =
-                classification.DocumentType switch
+                classification.DocumentKind switch
                 {
-                    DocumentType.Ac4Declaration
-                        or DocumentType.EadEVadDocument
+                    DocumentKind.Ac4Declaration
+                        or DocumentKind.EadEVadDocument
                         => Ac4BlobContainer,
 
                     _ => InvoiceBlobContainer
