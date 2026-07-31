@@ -234,8 +234,8 @@ public class DocumentRoleClassifierServiceTests
             .Be(0.90m);
     }
 
-    [Fact]
-    public void InvoiceWithApplicantAndDifferentCustomer_IsSalesInvoice()
+       [Fact]
+    public void InvoiceWithApplicantOnlyInRawText_RemainsUnknown()
     {
         var result = _sut.ClassifyRole(
             Classification(DocumentKind.Invoice),
@@ -247,14 +247,14 @@ public class DocumentRoleClassifierServiceTests
             Context("OTHER-001"));
 
         result.DocumentRole.Should()
-            .Be(DocumentRole.SalesInvoice);
+            .Be(DocumentRole.Unknown);
 
         result.Confidence.Should()
-            .Be(0.85m);
+            .Be(0.40m);
 
         result.Reasons.Should()
             .Contain(reason =>
-                reason.Contains("another party"));
+                reason.Contains("insufficient"));
     }
 
     [Fact]

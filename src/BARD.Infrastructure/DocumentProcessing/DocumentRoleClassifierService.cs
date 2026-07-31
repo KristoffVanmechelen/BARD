@@ -260,19 +260,6 @@ public sealed class DocumentRoleClassifierService : IDocumentRoleClassifierServi
                 reasons);
         }
 
-        if (!string.IsNullOrWhiteSpace(invoice.Customer)
-            && applicantAppearsInRawText)
-        {
-            reasons.Add(
-                "The applicant appears in the invoice text while another party is identified as the customer, so the document is classified as a sales invoice.");
-
-            return new DocumentRoleClassificationResult(
-                classification.FileName,
-                DocumentRole.SalesInvoice,
-                0.85m,
-                reasons);
-        }
-
         reasons.Add(
             "The available party and claim evidence is insufficient to distinguish a purchase invoice from a sales invoice.");
 
