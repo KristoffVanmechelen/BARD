@@ -161,12 +161,16 @@ public class GetDossierDetailQueryHandler
                 l.RequiresManualReview()))
             .ToList();
 
-        var documentDtos = dossier.Documents
+              var documentDtos = dossier.Documents
             .Select(doc => new DossierDocumentDto(
                 doc.Id,
                 doc.OriginalFileName,
                 doc.DocumentKind.ToString(),
                 doc.ClassificationConfidence,
+                doc.DocumentRole.ToString(),
+                doc.RoleConfidence,
+                doc.RoleReasons,
+                doc.RoleConfirmedByUser,
                 doc.ExtractionMethod.ToString(),
                 doc.ExtractionConfidence,
                 doc.OcrWasRequired,
