@@ -22,12 +22,14 @@ public class DocumentRoleClassifierServiceTests
     }
 
     private static ParsedInvoice Invoice(
-        string? invoiceNumber = "INV-001")
+        string? invoiceNumber = "INV-001",
+        string? customer = null,
+        string rawText = "")
     {
         return new ParsedInvoice(
             invoiceNumber,
             null,
-            null,
+            customer,
             null,
             "FR",
             Array.Empty<ParsedInvoiceLine>(),
@@ -35,7 +37,7 @@ public class DocumentRoleClassifierServiceTests
             ExtractionMethod.ClassicalTextExtraction,
             1m,
             Array.Empty<string>(),
-            "");
+            rawText);
     }
 
     private static ParsedAc4Declaration Ac4()
@@ -55,11 +57,13 @@ public class DocumentRoleClassifierServiceTests
     }
 
     private static DocumentRoleClassificationContext Context(
-        string invoiceNumber = "INV-001")
+        string? invoiceNumber = "CLAIM-001",
+        string companyName = "Test Company",
+        string enterpriseNumber = "BE0123456789")
     {
         return new DocumentRoleClassificationContext(
-            "Test Company",
-            "BE0123456789",
+            companyName,
+            enterpriseNumber,
             new[]
             {
                 new ParsedExcelClaimRow(
@@ -83,9 +87,14 @@ public class DocumentRoleClassifierServiceTests
             null,
             Context());
 
-        result.DocumentRole.Should().Be(DocumentRole.RefundClaim);
-        result.Confidence.Should().Be(1.00m);
-        result.Reasons.Should().NotBeEmpty();
+        result.DocumentRole.Should()
+            .Be(DocumentRole.RefundClaim);
+
+        result.Confidence.Should()
+            .Be(1.00m);
+
+        result.Reasons.Should()
+            .NotBeEmpty();
     }
 
     [Fact]
@@ -97,9 +106,15 @@ public class DocumentRoleClassifierServiceTests
             Ac4(),
             Context());
 
-        result.DocumentRole.Should().Be(DocumentRole.DispatchEvidence);
-        result.Confidence.Should().BeGreaterThan(0.90m);
-        result.Reasons.Should().Contain(r => r.Contains("24BE123456789"));
+        result.DocumentRole.Should()
+            .Be(DocumentRole.DispatchEvidence);
+
+        result.Confidence.Should()
+            .BeGreaterThan(0.90m);
+
+        result.Reasons.Should()
+            .Contain(reason =>
+                reason.Contains("24BE123456789"));
     }
 
     [Fact]
@@ -111,8 +126,11 @@ public class DocumentRoleClassifierServiceTests
             null,
             Context());
 
-        result.DocumentRole.Should().Be(DocumentRole.DispatchEvidence);
-        result.Confidence.Should().Be(0.95m);
+        result.DocumentRole.Should()
+            .Be(DocumentRole.DispatchEvidence);
+
+        result.Confidence.Should()
+            .Be(0.95m);
     }
 
     [Fact]
@@ -124,49 +142,182 @@ public class DocumentRoleClassifierServiceTests
             null,
             Context());
 
-        result.DocumentRole.Should().Be(DocumentRole.SupportingEvidence);
-        result.Confidence.Should().Be(0.90m);
+        result.DocumentRole.Should()
+            .Be(DocumentRole.SupportingEvidence);
+
+        result.Confidence.Should()
+            .Be(0.90m);
     }
 
     [Fact]
-    public void Invoice_CurrentlyRemainsUnknown()
+    public void InvoiceWithApplicantEnterpriseNumberInCustomer_IsPurchaseInvoice()
     {
         var result = _sut.ClassifyRole(
             Classification(DocumentKind.Invoice),
-            Invoice(),
+            Invoice(
+                "PUR-001",
+                "Test Company\nVAT 0123.456.789"),
             null,
-            Context());
+            Context("SALE-OTHER"));
 
-        result.DocumentRole.Should().Be(DocumentRole.Unknown);
-        result.Confidence.Should().Be(0.40m);
+        result.DocumentRole.Should()
+            .Be(DocumentRole.PurchaseInvoice);
+
+        result.Confidence.Should()
+            .Be(0.98m);
+
+        result.Reasons.Should()
+            .Contain(reason =>
+                reason.Contains("enterprise/VAT number"));
     }
 
     [Fact]
-    public void InvoiceWithoutInvoiceNumber_RemainsUnknown()
+    public void InvoiceWithApplicantNameInCustomer_IsPurchaseInvoice()
     {
         var result = _sut.ClassifyRole(
             Classification(DocumentKind.Invoice),
-            Invoice(null),
+            Invoice(
+                "PUR-001",
+                "Test Company\nMain Street 1"),
             null,
-            Context());
+            Context("SALE-OTHER"));
 
-        result.DocumentRole.Should().Be(DocumentRole.Unknown);
-        result.Reasons.Should().Contain(r =>
-            r.Contains("No invoice number"));
+        result.DocumentRole.Should()
+            .Be(DocumentRole.PurchaseInvoice);
+
+        result.Confidence.Should()
+            .Be(0.92m);
+
+        result.Reasons.Should()
+            .Contain(reason =>
+                reason.Contains("company name"));
     }
 
     [Fact]
-    public void InvoiceFoundInExcel_StillRemainsUnknown()
+    public void InvoiceReferencedByClaimAndContainingApplicant_IsSalesInvoice()
     {
         var result = _sut.ClassifyRole(
             Classification(DocumentKind.Invoice),
-            Invoice("INV-001"),
+            Invoice(
+                "INV-001",
+                "Foreign Customer",
+                "Seller: Test Company\nVAT BE 0123.456.789"),
+            null,
+            Context("inv 001"));
+
+        result.DocumentRole.Should()
+            .Be(DocumentRole.SalesInvoice);
+
+        result.Confidence.Should()
+            .Be(0.97m);
+
+        result.Reasons.Should()
+            .Contain(reason =>
+                reason.Contains("Excel refund claim"));
+    }
+
+    [Fact]
+    public void InvoiceReferencedByClaimWithoutPartyEvidence_IsSalesInvoice()
+    {
+        var result = _sut.ClassifyRole(
+            Classification(DocumentKind.Invoice),
+            Invoice(
+                "SALE-001",
+                "Foreign Customer"),
+            null,
+            Context("SALE-001"));
+
+        result.DocumentRole.Should()
+            .Be(DocumentRole.SalesInvoice);
+
+        result.Confidence.Should()
+            .Be(0.90m);
+    }
+
+    [Fact]
+    public void InvoiceWithApplicantAndDifferentCustomer_IsSalesInvoice()
+    {
+        var result = _sut.ClassifyRole(
+            Classification(DocumentKind.Invoice),
+            Invoice(
+                "SALE-001",
+                "Foreign Customer",
+                "Test Company\nInvoice for Foreign Customer"),
+            null,
+            Context("OTHER-001"));
+
+        result.DocumentRole.Should()
+            .Be(DocumentRole.SalesInvoice);
+
+        result.Confidence.Should()
+            .Be(0.85m);
+
+        result.Reasons.Should()
+            .Contain(reason =>
+                reason.Contains("another party"));
+    }
+
+    [Fact]
+    public void InvoiceWithConflictingPurchaseAndSalesEvidence_RemainsUnknown()
+    {
+        var result = _sut.ClassifyRole(
+            Classification(DocumentKind.Invoice),
+            Invoice(
+                "INV-001",
+                "Test Company\nBE0123456789"),
             null,
             Context("INV-001"));
 
-        result.DocumentRole.Should().Be(DocumentRole.Unknown);
+        result.DocumentRole.Should()
+            .Be(DocumentRole.Unknown);
 
-        result.Reasons.Should().Contain(r =>
-            r.Contains("occurs"));
+        result.Confidence.Should()
+            .Be(0.25m);
+
+        result.Reasons.Should()
+            .Contain(reason =>
+                reason.Contains("conflicting"));
+    }
+
+    [Fact]
+    public void InvoiceWithoutReliablePartyOrClaimEvidence_RemainsUnknown()
+    {
+        var result = _sut.ClassifyRole(
+            Classification(DocumentKind.Invoice),
+            Invoice(
+                null,
+                "Unidentified Customer"),
+            null,
+            Context("CLAIM-001"));
+
+        result.DocumentRole.Should()
+            .Be(DocumentRole.Unknown);
+
+        result.Confidence.Should()
+            .Be(0.40m);
+
+        result.Reasons.Should()
+            .Contain(reason =>
+                reason.Contains("No invoice number"));
+    }
+
+    [Fact]
+    public void InvoiceWithoutParsedData_RemainsUnknown()
+    {
+        var result = _sut.ClassifyRole(
+            Classification(DocumentKind.Invoice),
+            null,
+            null,
+            Context());
+
+        result.DocumentRole.Should()
+            .Be(DocumentRole.Unknown);
+
+        result.Confidence.Should()
+            .Be(0.20m);
+
+        result.Reasons.Should()
+            .Contain(reason =>
+                reason.Contains("No parsed invoice data"));
     }
 }
