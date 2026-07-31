@@ -25,6 +25,8 @@ public class DossierDocument : AuditableEntity
     public decimal RoleConfidence { get; private set; }
     public string? RoleReasons { get; private set; }
     public bool RoleConfirmedByUser { get; private set; }
+    public Guid? RoleConfirmedByUserId { get; private set; }
+    public DateTime? RoleConfirmedAtUtc { get; private set; }
 
     public decimal ClassificationConfidence { get; private set; }
     public string? ClassificationReasons { get; private set; }
@@ -64,6 +66,8 @@ public class DossierDocument : AuditableEntity
             DocumentRole = DocumentRole.Unknown,
             RoleConfidence = 0m,
             RoleConfirmedByUser = false,
+            RoleConfirmedByUserId = null,
+            RoleConfirmedAtUtc = null,
 
             ClassificationConfidence = 0m,
 
@@ -87,16 +91,25 @@ public class DossierDocument : AuditableEntity
 
     /// <summary>
     /// Sets the functional role inferred from the dossier context.
+    /// A role that has been confirmed by a user is authoritative and
+    /// cannot be overwritten by automatic reclassification.
     /// </summary>
     public void SetDocumentRole(
         DocumentRole role,
         decimal confidence,
         string? reasons)
     {
+        if (RoleConfirmedByUser)
+        {
+            return;
+        }
+
         DocumentRole = role;
         RoleConfidence = confidence;
         RoleReasons = reasons;
         RoleConfirmedByUser = false;
+        RoleConfirmedByUserId = null;
+        RoleConfirmedAtUtc = null;
     }
 
     /// <summary>
@@ -105,12 +118,22 @@ public class DossierDocument : AuditableEntity
     /// </summary>
     public void ConfirmDocumentRole(
         DocumentRole role,
-        string? reasons = null)
+        string? reasons,
+        Guid confirmedByUserId)
     {
+        if (confirmedByUserId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "The confirming user identifier is required.",
+                nameof(confirmedByUserId));
+        }
+
         DocumentRole = role;
         RoleConfidence = 1m;
         RoleReasons = reasons;
         RoleConfirmedByUser = true;
+        RoleConfirmedByUserId = confirmedByUserId;
+        RoleConfirmedAtUtc = DateTime.UtcNow;
     }
 
     public void SetExtractionResult(
