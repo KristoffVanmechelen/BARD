@@ -79,6 +79,11 @@ public record DossierDocumentDto(
     string? ExtractionWarnings
 );
 
+public record CorrectInvoiceRoleRequest(
+    string DocumentRole,
+    string Reasons
+);
+
 public record RecordOfficerDecisionRequest(
     Guid DossierLineId,
     string Decision,
