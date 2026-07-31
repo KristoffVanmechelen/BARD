@@ -223,8 +223,46 @@ public class ProcessDossierCommandHandler
             }
         }
 
+        var roleContext =
+            new DocumentRoleClassificationContext(
+                request.CompanyName,
+                request.EnterpriseNumber,
+                excelRows);
+
+        var roleClassifications =
+            classifications.ToDictionary(
+                classification => classification.FileName,
+                classification =>
+                    _documentRoleClassifier.ClassifyRole(
+                        classification,
+                        invoices.FirstOrDefault(
+                            invoice =>
+                                string.Equals(
+                                    invoice.SourceFile,
+                                    classification.FileName,
+                                    StringComparison.OrdinalIgnoreCase)),
+                        ac4Declarations.FirstOrDefault(
+                            ac4 =>
+                                string.Equals(
+                                    ac4.SourceFile,
+                                    classification.FileName,
+                                    StringComparison.OrdinalIgnoreCase)),
+                        roleContext),
+                StringComparer.OrdinalIgnoreCase);
+
+        var salesInvoices = invoices
+            .Where(invoice =>
+                roleClassifications.TryGetValue(
+                    invoice.SourceFile,
+                    out var roleClassification)
+                && roleClassification.DocumentRole
+                == DocumentRole.SalesInvoice)
+            .ToList();
+
         var matchResults =
-            _matchingService.MatchAll(excelRows, invoices);
+            _matchingService.MatchAll(
+                excelRows,
+                salesInvoices);
 
         var company =
             await ResolveOrCreateCompany(request, ct);
@@ -374,17 +412,14 @@ public class ProcessDossierCommandHandler
             request.ExcelFile,
             ct);
 
-await PersistPdfDocuments(
-    dossier,
-    request.PdfFiles,
-    classifications,
-    invoices,
-    ac4Declarations,
-    new DocumentRoleClassificationContext(
-        request.CompanyName,
-        request.EnterpriseNumber,
-        excelRows),
-    ct);
+        await PersistPdfDocuments(
+            dossier,
+            request.PdfFiles,
+            classifications,
+            invoices,
+            ac4Declarations,
+            roleClassifications,
+            ct);
 
         dossier.RecomputeStatusFromLines(
             _currentUser.UserId);
@@ -550,14 +585,16 @@ await PersistPdfDocuments(
         _db.DossierDocuments.Add(document);
     }
 
-private async Task PersistPdfDocuments(
-    Dossier dossier,
-    IReadOnlyList<UploadedFile> pdfFiles,
-    List<DocumentClassificationResult> classifications,
-    List<ParsedInvoice> invoices,
-    List<ParsedAc4Declaration> ac4Declarations,
-    DocumentRoleClassificationContext roleContext,
-    CancellationToken ct)
+    private async Task PersistPdfDocuments(
+        Dossier dossier,
+        IReadOnlyList<UploadedFile> pdfFiles,
+        List<DocumentClassificationResult> classifications,
+        List<ParsedInvoice> invoices,
+        List<ParsedAc4Declaration> ac4Declarations,
+        IReadOnlyDictionary<
+            string,
+            DocumentRoleClassificationResult> roleClassifications,
+        CancellationToken ct)
     {
         foreach (var pdfFile in pdfFiles)
         {
@@ -616,12 +653,9 @@ private async Task PersistPdfDocuments(
                     a => a.SourceFile
                          == pdfFile.FileName);
 
-        var roleClassification =
-    _documentRoleClassifier.ClassifyRole(
-        classification,
-        invoice,
-        ac4,
-        roleContext);
+              var roleClassification =
+                roleClassifications[
+                    classification.FileName];
 
             document.SetDocumentRole(
                 roleClassification.DocumentRole,
