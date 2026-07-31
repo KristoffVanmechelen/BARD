@@ -54,21 +54,24 @@ public class DocumentRoleClassifierServiceTests
             "");
     }
 
-    private static IReadOnlyList<ParsedExcelClaimRow> ExcelRows(
+    private static DocumentRoleClassificationContext Context(
         string invoiceNumber = "INV-001")
     {
-        return new[]
-        {
-            new ParsedExcelClaimRow(
-                1,
-                invoiceNumber,
-                "Beer",
-                "S101",
-                100m,
-                "MRN1",
-                "FR",
-                new Dictionary<string, string?>())
-        };
+        return new DocumentRoleClassificationContext(
+            "Test Company",
+            "BE0123456789",
+            new[]
+            {
+                new ParsedExcelClaimRow(
+                    1,
+                    invoiceNumber,
+                    "Beer",
+                    "S101",
+                    100m,
+                    "MRN1",
+                    "FR",
+                    new Dictionary<string, string?>())
+            });
     }
 
     [Fact]
@@ -78,7 +81,7 @@ public class DocumentRoleClassifierServiceTests
             Classification(DocumentKind.CompanyExcelClaim),
             null,
             null,
-            ExcelRows());
+            Context());
 
         result.DocumentRole.Should().Be(DocumentRole.RefundClaim);
         result.Confidence.Should().Be(1.00m);
@@ -92,7 +95,7 @@ public class DocumentRoleClassifierServiceTests
             Classification(DocumentKind.Ac4Declaration),
             null,
             Ac4(),
-            ExcelRows());
+            Context());
 
         result.DocumentRole.Should().Be(DocumentRole.DispatchEvidence);
         result.Confidence.Should().BeGreaterThan(0.90m);
@@ -106,7 +109,7 @@ public class DocumentRoleClassifierServiceTests
             Classification(DocumentKind.EadEVadDocument),
             null,
             null,
-            ExcelRows());
+            Context());
 
         result.DocumentRole.Should().Be(DocumentRole.DispatchEvidence);
         result.Confidence.Should().Be(0.95m);
@@ -119,7 +122,7 @@ public class DocumentRoleClassifierServiceTests
             Classification(DocumentKind.SupportingEvidence),
             null,
             null,
-            ExcelRows());
+            Context());
 
         result.DocumentRole.Should().Be(DocumentRole.SupportingEvidence);
         result.Confidence.Should().Be(0.90m);
@@ -132,7 +135,7 @@ public class DocumentRoleClassifierServiceTests
             Classification(DocumentKind.Invoice),
             Invoice(),
             null,
-            ExcelRows());
+            Context());
 
         result.DocumentRole.Should().Be(DocumentRole.Unknown);
         result.Confidence.Should().Be(0.40m);
@@ -145,7 +148,7 @@ public class DocumentRoleClassifierServiceTests
             Classification(DocumentKind.Invoice),
             Invoice(null),
             null,
-            ExcelRows());
+            Context());
 
         result.DocumentRole.Should().Be(DocumentRole.Unknown);
         result.Reasons.Should().Contain(r =>
@@ -159,7 +162,7 @@ public class DocumentRoleClassifierServiceTests
             Classification(DocumentKind.Invoice),
             Invoice("INV-001"),
             null,
-            ExcelRows("INV-001"));
+            Context("INV-001"));
 
         result.DocumentRole.Should().Be(DocumentRole.Unknown);
 

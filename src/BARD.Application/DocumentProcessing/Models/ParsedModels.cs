@@ -60,6 +60,18 @@ public sealed record DocumentClassificationResult(
 );
 
 /// <summary>
+/// Context supplied to the document-role classifier.
+///
+/// This contains dossier-level information that is unavailable from an
+/// individual document but may be required to determine its role.
+/// </summary>
+public sealed record DocumentRoleClassificationContext(
+    string CompanyName,
+    string EnterpriseNumber,
+    IReadOnlyList<ParsedExcelClaimRow> ExcelRows
+);
+
+/// <summary>
 /// Result of the contextual document-role classification stage.
 ///
 /// DocumentRole describes the function fulfilled by the document within

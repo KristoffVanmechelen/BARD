@@ -43,7 +43,7 @@ public interface IDocumentClassifierService
 /// Determines the contextual role of a document within a dossier.
 ///
 /// This stage runs after document-kind classification and may use the
-/// parsed document contents together with the Excel refund claim.
+/// parsed document contents together with dossier-level context.
 /// </summary>
 public interface IDocumentRoleClassifierService
 {
@@ -51,7 +51,7 @@ public interface IDocumentRoleClassifierService
         DocumentClassificationResult classification,
         ParsedInvoice? invoice,
         ParsedAc4Declaration? ac4Declaration,
-        IReadOnlyList<ParsedExcelClaimRow> excelRows);
+        DocumentRoleClassificationContext context);
 }
 
 /// <summary>Ports core/ingestion/invoice_parser.py.</summary>

@@ -17,10 +17,10 @@ public sealed class DocumentRoleClassifierService : IDocumentRoleClassifierServi
         DocumentClassificationResult classification,
         ParsedInvoice? invoice,
         ParsedAc4Declaration? ac4Declaration,
-        IReadOnlyList<ParsedExcelClaimRow> excelRows)
+        DocumentRoleClassificationContext context)
     {
         ArgumentNullException.ThrowIfNull(classification);
-        ArgumentNullException.ThrowIfNull(excelRows);
+        ArgumentNullException.ThrowIfNull(context);
 
         return classification.DocumentKind switch
         {
@@ -49,7 +49,7 @@ public sealed class DocumentRoleClassifierService : IDocumentRoleClassifierServi
                     "The document was classified as general supporting evidence."),
 
             DocumentKind.Invoice =>
-                ClassifyInvoice(classification, invoice, excelRows),
+                ClassifyInvoice(classification, invoice, context),
 
             _ =>
                 CreateResult(
@@ -100,7 +100,7 @@ public sealed class DocumentRoleClassifierService : IDocumentRoleClassifierServi
     private static DocumentRoleClassificationResult ClassifyInvoice(
         DocumentClassificationResult classification,
         ParsedInvoice? invoice,
-        IReadOnlyList<ParsedExcelClaimRow> excelRows)
+        DocumentRoleClassificationContext context)
     {
         var reasons = new List<string>
         {
@@ -117,7 +117,7 @@ public sealed class DocumentRoleClassifierService : IDocumentRoleClassifierServi
             {
                 reasons.Add($"The parsed invoice number is {invoice.InvoiceNumber}.");
 
-                var matchingClaimRows = excelRows.Count(row =>
+                var matchingClaimRows = context.ExcelRows.Count(row =>
                     !string.IsNullOrWhiteSpace(row.InvoiceNumber) &&
                     string.Equals(
                         Normalize(row.InvoiceNumber),

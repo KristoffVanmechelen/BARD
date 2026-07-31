@@ -374,14 +374,17 @@ public class ProcessDossierCommandHandler
             request.ExcelFile,
             ct);
 
-        await PersistPdfDocuments(
-            dossier,
-            request.PdfFiles,
-            classifications,
-            invoices,
-            ac4Declarations,
-            excelRows,
-            ct);
+await PersistPdfDocuments(
+    dossier,
+    request.PdfFiles,
+    classifications,
+    invoices,
+    ac4Declarations,
+    new DocumentRoleClassificationContext(
+        request.CompanyName,
+        request.EnterpriseNumber,
+        excelRows),
+    ct);
 
         dossier.RecomputeStatusFromLines(
             _currentUser.UserId);
@@ -547,14 +550,14 @@ public class ProcessDossierCommandHandler
         _db.DossierDocuments.Add(document);
     }
 
-    private async Task PersistPdfDocuments(
-        Dossier dossier,
-        IReadOnlyList<UploadedFile> pdfFiles,
-        List<DocumentClassificationResult> classifications,
-        List<ParsedInvoice> invoices,
-        List<ParsedAc4Declaration> ac4Declarations,
-        IReadOnlyList<ParsedExcelClaimRow> excelRows,
-        CancellationToken ct)
+private async Task PersistPdfDocuments(
+    Dossier dossier,
+    IReadOnlyList<UploadedFile> pdfFiles,
+    List<DocumentClassificationResult> classifications,
+    List<ParsedInvoice> invoices,
+    List<ParsedAc4Declaration> ac4Declarations,
+    DocumentRoleClassificationContext roleContext,
+    CancellationToken ct)
     {
         foreach (var pdfFile in pdfFiles)
         {
@@ -613,12 +616,12 @@ public class ProcessDossierCommandHandler
                     a => a.SourceFile
                          == pdfFile.FileName);
 
-            var roleClassification =
-                _documentRoleClassifier.ClassifyRole(
-                    classification,
-                    invoice,
-                    ac4,
-                    excelRows);
+        var roleClassification =
+    _documentRoleClassifier.ClassifyRole(
+        classification,
+        invoice,
+        ac4,
+        roleContext);
 
             document.SetDocumentRole(
                 roleClassification.DocumentRole,
