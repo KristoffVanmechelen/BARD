@@ -117,6 +117,12 @@ public class GetDossierDetailQueryHandler
         var reviewerIds = dossier.Lines
             .Where(l => l.ReviewedByUserId != null)
             .Select(l => l.ReviewedByUserId!.Value)
+            .Concat(
+                dossier.Documents
+                    .Where(d =>
+                        d.RoleConfirmedByUserId != null)
+                    .Select(d =>
+                        d.RoleConfirmedByUserId!.Value))
             .Distinct()
             .ToList();
 
@@ -161,7 +167,7 @@ public class GetDossierDetailQueryHandler
                 l.RequiresManualReview()))
             .ToList();
 
-              var documentDtos = dossier.Documents
+        var documentDtos = dossier.Documents
             .Select(doc => new DossierDocumentDto(
                 doc.Id,
                 doc.OriginalFileName,
@@ -171,6 +177,13 @@ public class GetDossierDetailQueryHandler
                 doc.RoleConfidence,
                 doc.RoleReasons,
                 doc.RoleConfirmedByUser,
+                doc.RoleConfirmedByUserId != null
+                    && reviewers.TryGetValue(
+                        doc.RoleConfirmedByUserId.Value,
+                        out var roleConfirmer)
+                        ? roleConfirmer.DisplayName
+                        : null,
+                doc.RoleConfirmedAtUtc,
                 doc.ExtractionMethod.ToString(),
                 doc.ExtractionConfidence,
                 doc.OcrWasRequired,

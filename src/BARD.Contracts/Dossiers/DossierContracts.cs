@@ -73,6 +73,8 @@ public record DossierDocumentDto(
     decimal RoleConfidence,
     string? RoleReasons,
     bool RoleConfirmedByUser,
+    string? RoleConfirmedByDisplayName,
+    DateTime? RoleConfirmedAtUtc,
     string ExtractionMethod,
     decimal ExtractionConfidence,
     bool OcrWasRequired,
