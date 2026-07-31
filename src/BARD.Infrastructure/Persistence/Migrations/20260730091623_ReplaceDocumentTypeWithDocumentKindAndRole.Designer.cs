@@ -4,6 +4,7 @@ using BARD.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace BARD.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(BardDbContext))]
-    partial class BardDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260730091623_ReplaceDocumentTypeWithDocumentKindAndRole")]
+    partial class ReplaceDocumentTypeWithDocumentKindAndRole
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -396,14 +399,8 @@ namespace BARD.Infrastructure.Persistence.Migrations
                     b.Property<decimal>("RoleConfidence")
                         .HasColumnType("decimal(5,4)");
 
-                    b.Property<DateTime?>("RoleConfirmedAtUtc")
-                        .HasColumnType("datetime2");
-
                     b.Property<bool>("RoleConfirmedByUser")
                         .HasColumnType("bit");
-
-                    b.Property<Guid?>("RoleConfirmedByUserId")
-                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("RoleReasons")
                         .HasColumnType("nvarchar(max)");

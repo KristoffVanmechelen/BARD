@@ -67,12 +67,23 @@ public record DossierDetailDto(
 public record DossierDocumentDto(
     Guid Id,
     string OriginalFileName,
-    string DocumentType,
+    string DocumentKind,
     decimal ClassificationConfidence,
+    string DocumentRole,
+    decimal RoleConfidence,
+    string? RoleReasons,
+    bool RoleConfirmedByUser,
+    string? RoleConfirmedByDisplayName,
+    DateTime? RoleConfirmedAtUtc,
     string ExtractionMethod,
     decimal ExtractionConfidence,
     bool OcrWasRequired,
     string? ExtractionWarnings
+);
+
+public record CorrectInvoiceRoleRequest(
+    string DocumentRole,
+    string Reasons
 );
 
 public record RecordOfficerDecisionRequest(

@@ -29,17 +29,23 @@ public record RequestAiAssistExtractionCommand(
     IReadOnlyList<string> FieldsNeeded
 ) : IRequest<AiAssistResult>;
 
-public class RequestAiAssistExtractionCommandValidator : AbstractValidator<RequestAiAssistExtractionCommand>
+public class RequestAiAssistExtractionCommandValidator
+    : AbstractValidator<RequestAiAssistExtractionCommand>
 {
     public RequestAiAssistExtractionCommandValidator()
     {
-        RuleFor(x => x.FieldsNeeded).NotEmpty()
-            .WithMessage("At least one field must be specified for AI-assisted extraction.");
-        RuleFor(x => x.RawText).NotEmpty();
+        RuleFor(x => x.FieldsNeeded)
+            .NotEmpty()
+            .WithMessage(
+                "At least one field must be specified for AI-assisted extraction.");
+
+        RuleFor(x => x.RawText)
+            .NotEmpty();
     }
 }
 
-public class RequestAiAssistExtractionCommandHandler : IRequestHandler<RequestAiAssistExtractionCommand, AiAssistResult>
+public class RequestAiAssistExtractionCommandHandler
+    : IRequestHandler<RequestAiAssistExtractionCommand, AiAssistResult>
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
@@ -61,49 +67,92 @@ public class RequestAiAssistExtractionCommandHandler : IRequestHandler<RequestAi
         _options = options.Value;
     }
 
-    public async Task<AiAssistResult> Handle(RequestAiAssistExtractionCommand request, CancellationToken ct)
+    public async Task<AiAssistResult> Handle(
+        RequestAiAssistExtractionCommand request,
+        CancellationToken ct)
     {
         if (!_options.Enabled)
-            throw new BusinessRuleViolationException("AI-assist is disabled in this deployment.");
+        {
+            throw new BusinessRuleViolationException(
+                "AI-assist is disabled in this deployment.");
+        }
 
         // Redundant with the fact that nothing else calls this — kept as
         // a hard, auditable guard per the confirmed on-demand-only policy,
         // matching core/ai_assist/openai_client.py's identical check.
         if (_options.AutoTrigger)
+        {
             throw new BusinessRuleViolationException(
                 "AiAssistOptions.AutoTrigger is true, which violates the confirmed on-demand-only policy. " +
                 "Refusing to proceed — fix configuration.");
+        }
 
         if (!_currentUser.HasPermission(PermissionCodes.DossierAiAssist))
-            throw new ForbiddenAccessException(PermissionCodes.DossierAiAssist);
-
-        var document = await _db.DossierDocuments.FirstOrDefaultAsync(d => d.Id == request.DossierDocumentId, ct)
-            ?? throw new NotFoundException(nameof(DossierDocument), request.DossierDocumentId);
-
-        var promptTemplate = document.DocumentType switch
         {
-            DocumentType.SalesInvoice => PromptTemplates.InvoiceFieldExtractionV1,
-            DocumentType.Ac4Declaration or DocumentType.EadEVadDocument => PromptTemplates.Ac4FieldExtractionV1,
+            throw new ForbiddenAccessException(
+                PermissionCodes.DossierAiAssist);
+        }
+
+        var document = await _db.DossierDocuments
+            .FirstOrDefaultAsync(
+                d => d.Id == request.DossierDocumentId,
+                ct)
+            ?? throw new NotFoundException(
+                nameof(DossierDocument),
+                request.DossierDocumentId);
+
+        var promptTemplate = document.DocumentKind switch
+        {
+            DocumentKind.Invoice =>
+                PromptTemplates.InvoiceFieldExtractionV1,
+
+            DocumentKind.Ac4Declaration
+                or DocumentKind.EadEVadDocument =>
+                PromptTemplates.Ac4FieldExtractionV1,
+
             _ => throw new BusinessRuleViolationException(
-                $"AI-assist extraction is not defined for document type '{document.DocumentType}'."),
+                $"AI-assist extraction is not defined for document kind '{document.DocumentKind}'."),
         };
 
-        var result = await _aiAssist.ExtractFieldsAsync(request.RawText, request.FieldsNeeded, promptTemplate, ct);
+        var result = await _aiAssist.ExtractFieldsAsync(
+            request.RawText,
+            request.FieldsNeeded,
+            promptTemplate,
+            ct);
 
         // Record every AI-derived field with full traceability, clearly
         // labelled as AI-assisted so it is never confused with
-        // deterministic classical/OCR extraction (Golden Rule: the
-        // application must explain what it found and how).
+        // deterministic classical/OCR extraction.
         foreach (var (fieldName, value) in result.Fields)
-            document.RecordExtractedField($"AiAssist:{fieldName}", value, null,
-                $"model={result.Model}", 0.5m); // 0.5 confidence marker: AI-assisted values are never auto-trusted at full confidence
+        {
+            document.RecordExtractedField(
+                $"AiAssist:{fieldName}",
+                value,
+                null,
+                $"model={result.Model}",
+                0.5m);
+        }
 
-        document.SetExtractionResult(ExtractionMethod.AiAssisted, document.ExtractionConfidence,
-            document.ExtractionWarnings, document.OcrWasRequired);
+        document.SetExtractionResult(
+            ExtractionMethod.AiAssisted,
+            document.ExtractionConfidence,
+            document.ExtractionWarnings,
+            document.OcrWasRequired);
 
         await _db.SaveChangesAsync(ct);
-        await _auditLogger.LogAsync(nameof(DossierDocument), document.Id, "AiAssistExtraction",
-            new { request.FieldsNeeded, result.Model, result.PromptTokens, result.CompletionTokens }, ct);
+
+        await _auditLogger.LogAsync(
+            nameof(DossierDocument),
+            document.Id,
+            "AiAssistExtraction",
+            new
+            {
+                request.FieldsNeeded,
+                result.Model,
+                result.PromptTokens,
+                result.CompletionTokens,
+            },
+            ct);
 
         return result;
     }

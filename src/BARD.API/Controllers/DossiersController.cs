@@ -170,6 +170,27 @@ public class DossiersController : ControllerBase
     }
 
     /// <summary>
+    /// Allows an authorised dossier reviewer to correct the contextual
+    /// role of an invoice. The correction is recorded as an authoritative
+    /// user decision and cannot be overwritten by automatic classification.
+    /// </summary>
+    [HttpPut("documents/{documentId:guid}/invoice-role")]
+    [Authorize(Policy = PermissionCodes.DossierReview)]
+    public async Task<IActionResult> CorrectInvoiceRole(
+        Guid documentId,
+        [FromBody] CorrectInvoiceRoleRequest request,
+        CancellationToken ct)
+    {
+        await _mediator.Send(
+            new CorrectInvoiceRoleCommand(
+                documentId,
+                request),
+            ct);
+
+        return NoContent();
+    }
+
+    /// <summary>
     /// The only endpoint in the system that can move a dossier line out
     /// of PendingReview. Requires the DossierReview permission — never
     /// reachable from an automatic/system process (Core Philosophy).
