@@ -34,13 +34,17 @@ public class DossierExportService : IDossierExportService
     private readonly IApplicationDbContext _db;
     private readonly IBlobStorageService _blobStorage;
 
-    public DossierExportService(IApplicationDbContext db, IBlobStorageService blobStorage)
+    public DossierExportService(
+        IApplicationDbContext db,
+        IBlobStorageService blobStorage)
     {
         _db = db;
         _blobStorage = blobStorage;
     }
 
-    public async Task<DossierExportResult> GenerateReportAsync(Guid dossierId, CancellationToken ct = default)
+    public async Task<DossierExportResult> GenerateReportAsync(
+        Guid dossierId,
+        CancellationToken ct = default)
     {
         var dossier = await _db.Dossiers
             .Include(d => d.Lines)
@@ -48,16 +52,30 @@ public class DossierExportService : IDossierExportService
             .FirstOrDefaultAsync(d => d.Id == dossierId, ct)
             ?? throw new NotFoundException(nameof(Dossier), dossierId);
 
-        var excelDocument = dossier.Documents.FirstOrDefault(d => d.DocumentType == DocumentType.CompanyExcelClaim)
+        var excelDocument = dossier.Documents.FirstOrDefault(
+                d => d.DocumentKind == DocumentKind.CompanyExcelClaim)
             ?? throw new BusinessRuleViolationException(
                 $"Dossier '{dossier.DossierReference}' has no preserved original Excel claim document — cannot export.",
                 "errors.dossier.no_original_excel",
-                new Dictionary<string, string> { ["reference"] = dossier.DossierReference });
+                new Dictionary<string, string>
+                {
+                    ["reference"] = dossier.DossierReference,
+                });
 
-        var reviewerIds = dossier.Lines.Where(l => l.ReviewedByUserId != null).Select(l => l.ReviewedByUserId!.Value).Distinct().ToList();
-        var reviewers = await _db.Users.Where(u => reviewerIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, ct);
+        var reviewerIds = dossier.Lines
+            .Where(l => l.ReviewedByUserId != null)
+            .Select(l => l.ReviewedByUserId!.Value)
+            .Distinct()
+            .ToList();
 
-        using var originalStream = await _blobStorage.DownloadAsync(excelDocument.BlobStoragePath, ct);
+        var reviewers = await _db.Users
+            .Where(u => reviewerIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, ct);
+
+        using var originalStream = await _blobStorage.DownloadAsync(
+            excelDocument.BlobStoragePath,
+            ct);
+
         using var memoryStream = new MemoryStream();
         await originalStream.CopyToAsync(memoryStream, ct);
         memoryStream.Position = 0;
@@ -66,10 +84,12 @@ public class DossierExportService : IDossierExportService
         var worksheet = workbook.Worksheets.First();
 
         var headerRow = worksheet.FirstRowUsed()
-            ?? throw new BusinessRuleViolationException("Original Excel workbook has no header row — cannot export.");
+            ?? throw new BusinessRuleViolationException(
+                "Original Excel workbook has no header row — cannot export.");
 
         var lastOriginalColumn = headerRow.LastCellUsed()?.Address.ColumnNumber
-            ?? throw new BusinessRuleViolationException("Original Excel workbook header row is empty — cannot export.");
+            ?? throw new BusinessRuleViolationException(
+                "Original Excel workbook header row is empty — cannot export.");
 
         for (var i = 0; i < AppendedColumnHeaders.Length; i++)
         {
@@ -81,7 +101,10 @@ public class DossierExportService : IDossierExportService
         }
 
         var dataRows = worksheet.RowsUsed().Skip(1).ToList();
-        var maxLineRowIndex = dossier.Lines.Count > 0 ? dossier.Lines.Max(l => l.RowIndex) : -1;
+
+        var maxLineRowIndex = dossier.Lines.Count > 0
+            ? dossier.Lines.Max(l => l.RowIndex)
+            : -1;
 
         // Defensive integrity check (audit finding M4): the export
         // relies on the original workbook's row enumeration order still
@@ -90,6 +113,7 @@ public class DossierExportService : IDossierExportService
         // row count, refuse to silently misalign data rather than
         // producing a report with values on the wrong rows.
         if (dataRows.Count <= maxLineRowIndex)
+        {
             throw new BusinessRuleViolationException(
                 $"Dossier '{dossier.DossierReference}': the preserved original workbook has {dataRows.Count} data row(s), " +
                 $"but validation results reference row index {maxLineRowIndex}. The original file may have been modified " +
@@ -101,19 +125,26 @@ public class DossierExportService : IDossierExportService
                     ["rowCount"] = dataRows.Count.ToString(),
                     ["maxIndex"] = maxLineRowIndex.ToString(),
                 });
+        }
+
         var linesByRowIndex = dossier.Lines.ToDictionary(l => l.RowIndex);
 
         for (var rowIndex = 0; rowIndex < dataRows.Count; rowIndex++)
         {
             if (!linesByRowIndex.TryGetValue(rowIndex, out var line))
+            {
                 continue;
+            }
 
             var row = dataRows[rowIndex];
             var colour = RowColour(line);
 
-            var reviewerName = line.ReviewedByUserId != null && reviewers.TryGetValue(line.ReviewedByUserId.Value, out var reviewer)
-                ? reviewer.DisplayName
-                : "";
+            var reviewerName = line.ReviewedByUserId != null
+                && reviewers.TryGetValue(
+                    line.ReviewedByUserId.Value,
+                    out var reviewer)
+                    ? reviewer.DisplayName
+                    : "";
 
             var values = new object?[]
             {
@@ -134,20 +165,32 @@ public class DossierExportService : IDossierExportService
             {
                 var cell = row.Cell(lastOriginalColumn + 1 + i);
                 SetCellValue(cell, values[i]);
-                cell.Style.Fill.BackgroundColor = XLColor.FromHtml($"#{colour}");
+                cell.Style.Fill.BackgroundColor =
+                    XLColor.FromHtml($"#{colour}");
             }
 
             for (var c = 1; c <= lastOriginalColumn; c++)
-                row.Cell(c).Style.Fill.BackgroundColor = XLColor.FromHtml($"#{colour}");
+            {
+                row.Cell(c).Style.Fill.BackgroundColor =
+                    XLColor.FromHtml($"#{colour}");
+            }
         }
 
-        worksheet.Columns(lastOriginalColumn + 1, lastOriginalColumn + AppendedColumnHeaders.Length).AdjustToContents();
+        worksheet
+            .Columns(
+                lastOriginalColumn + 1,
+                lastOriginalColumn + AppendedColumnHeaders.Length)
+            .AdjustToContents();
 
         using var outputStream = new MemoryStream();
         workbook.SaveAs(outputStream);
 
-        var fileName = $"{dossier.DossierReference}_validation_report.xlsx";
-        return new DossierExportResult(outputStream.ToArray(), fileName,
+        var fileName =
+            $"{dossier.DossierReference}_validation_report.xlsx";
+
+        return new DossierExportResult(
+            outputStream.ToArray(),
+            fileName,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }
 
@@ -164,24 +207,31 @@ public class DossierExportService : IDossierExportService
             case null:
                 cell.Value = "";
                 break;
+
             case string s:
                 cell.Value = s;
                 break;
+
             case decimal d:
                 cell.Value = d;
                 break;
+
             case double db:
                 cell.Value = db;
                 break;
+
             case int i:
                 cell.Value = i;
                 break;
+
             case DateTime dt:
                 cell.Value = dt;
                 break;
+
             case bool b:
                 cell.Value = b;
                 break;
+
             default:
                 cell.Value = value.ToString() ?? "";
                 break;
@@ -190,16 +240,32 @@ public class DossierExportService : IDossierExportService
 
     internal static string RowColour(DossierLine line)
     {
-        if (line.OfficerDecision == OfficerDecision.Rejected) return ColourRed;
-        if (line.OfficerDecision == OfficerDecision.Approved) return ColourGreen;
+        if (line.OfficerDecision == OfficerDecision.Rejected)
+        {
+            return ColourRed;
+        }
 
-        if (line.MatchStatus == MatchStatus.NoMatch) return ColourRed;
-        if (line.ExportStatus == ExportConfirmationStatus.NotConfirmed) return ColourRed;
+        if (line.OfficerDecision == OfficerDecision.Approved)
+        {
+            return ColourGreen;
+        }
+
+        if (line.MatchStatus == MatchStatus.NoMatch)
+        {
+            return ColourRed;
+        }
+
+        if (line.ExportStatus == ExportConfirmationStatus.NotConfirmed)
+        {
+            return ColourRed;
+        }
 
         if (line.MatchStatus == MatchStatus.AutoMatch
             && line.ExportStatus == ExportConfirmationStatus.Confirmed
             && !line.RequiresManualReview())
+        {
             return ColourGreen;
+        }
 
         return ColourOrange;
     }

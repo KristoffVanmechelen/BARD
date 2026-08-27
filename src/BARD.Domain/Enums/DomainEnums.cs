@@ -59,14 +59,34 @@ public enum ExtractionMethod
     ManualEntry = 3,
 }
 
-public enum DocumentType
+/// <summary>
+/// Intrinsic type of the document.
+/// This never depends on the dossier context.
+/// </summary>
+public enum DocumentKind
 {
     Unknown = 0,
-    SalesInvoice = 1,
+    Invoice = 1,
     Ac4Declaration = 2,
     EadEVadDocument = 3,
     CompanyExcelClaim = 4,
     SupportingEvidence = 5,
+}
+
+/// <summary>
+/// Functional role of a document within a dossier.
+/// The same document kind may have different roles.
+/// </summary>
+public enum DocumentRole
+{
+    Unknown = 0,
+    PurchaseInvoice = 1,
+    SalesInvoice = 2,
+    RefundClaim = 3,
+    AcquisitionEvidence = 4,
+    DispatchEvidence = 5,
+    SupportingEvidence = 6,
+    Irrelevant = 7,
 }
 
 public enum UiLanguage

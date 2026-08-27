@@ -89,6 +89,7 @@ public class ProcessDossierCommandHandler
     private readonly IBlobStorageService _blobStorage;
     private readonly IExcelClaimReaderService _excelReader;
     private readonly IDocumentClassifierService _documentClassifier;
+    private readonly IDocumentRoleClassifierService _documentRoleClassifier;
     private readonly IInvoiceParsingService _invoiceParser;
     private readonly IAc4ParsingService _ac4Parser;
     private readonly IMatchingService _matchingService;
@@ -106,6 +107,7 @@ public class ProcessDossierCommandHandler
         IBlobStorageService blobStorage,
         IExcelClaimReaderService excelReader,
         IDocumentClassifierService documentClassifier,
+        IDocumentRoleClassifierService documentRoleClassifier,
         IInvoiceParsingService invoiceParser,
         IAc4ParsingService ac4Parser,
         IMatchingService matchingService,
@@ -121,6 +123,7 @@ public class ProcessDossierCommandHandler
         _blobStorage = blobStorage;
         _excelReader = excelReader;
         _documentClassifier = documentClassifier;
+        _documentRoleClassifier = documentRoleClassifier;
         _invoiceParser = invoiceParser;
         _ac4Parser = ac4Parser;
         _matchingService = matchingService;
@@ -195,9 +198,9 @@ public class ProcessDossierCommandHandler
             using var parseStream =
                 new MemoryStream(pdfFile.Content);
 
-            switch (classification.DocumentType)
+            switch (classification.DocumentKind)
             {
-                case DocumentType.SalesInvoice:
+                case DocumentKind.Invoice:
                     invoices.Add(
                         await _invoiceParser.ParseAsync(
                             parseStream,
@@ -205,8 +208,8 @@ public class ProcessDossierCommandHandler
                             ct));
                     break;
 
-                case DocumentType.Ac4Declaration:
-                case DocumentType.EadEVadDocument:
+                case DocumentKind.Ac4Declaration:
+                case DocumentKind.EadEVadDocument:
                     ac4Declarations.Add(
                         await _ac4Parser.ParseAsync(
                             parseStream,
@@ -220,8 +223,46 @@ public class ProcessDossierCommandHandler
             }
         }
 
+        var roleContext =
+            new DocumentRoleClassificationContext(
+                request.CompanyName,
+                request.EnterpriseNumber,
+                excelRows);
+
+        var roleClassifications =
+            classifications.ToDictionary(
+                classification => classification.FileName,
+                classification =>
+                    _documentRoleClassifier.ClassifyRole(
+                        classification,
+                        invoices.FirstOrDefault(
+                            invoice =>
+                                string.Equals(
+                                    invoice.SourceFile,
+                                    classification.FileName,
+                                    StringComparison.OrdinalIgnoreCase)),
+                        ac4Declarations.FirstOrDefault(
+                            ac4 =>
+                                string.Equals(
+                                    ac4.SourceFile,
+                                    classification.FileName,
+                                    StringComparison.OrdinalIgnoreCase)),
+                        roleContext),
+                StringComparer.OrdinalIgnoreCase);
+
+        var salesInvoices = invoices
+            .Where(invoice =>
+                roleClassifications.TryGetValue(
+                    invoice.SourceFile,
+                    out var roleClassification)
+                && roleClassification.DocumentRole
+                == DocumentRole.SalesInvoice)
+            .ToList();
+
         var matchResults =
-            _matchingService.MatchAll(excelRows, invoices);
+            _matchingService.MatchAll(
+                excelRows,
+                salesInvoices);
 
         var company =
             await ResolveOrCreateCompany(request, ct);
@@ -377,6 +418,7 @@ public class ProcessDossierCommandHandler
             classifications,
             invoices,
             ac4Declarations,
+            roleClassifications,
             ct);
 
         dossier.RecomputeStatusFromLines(
@@ -524,10 +566,15 @@ public class ProcessDossierCommandHandler
                 excelFile.Content.Length,
                 _currentUser.UserId);
 
-        document.SetClassification(
-            DocumentType.CompanyExcelClaim,
+        document.SetDocumentKind(
+            DocumentKind.CompanyExcelClaim,
             1.0m,
             "Uploaded as the company Excel refund claim.");
+
+        document.SetDocumentRole(
+            DocumentRole.RefundClaim,
+            1.0m,
+            "The uploaded Excel document forms the basis of the refund claim.");
 
         document.SetExtractionResult(
             ExtractionMethod.ClassicalTextExtraction,
@@ -544,6 +591,9 @@ public class ProcessDossierCommandHandler
         List<DocumentClassificationResult> classifications,
         List<ParsedInvoice> invoices,
         List<ParsedAc4Declaration> ac4Declarations,
+        IReadOnlyDictionary<
+            string,
+            DocumentRoleClassificationResult> roleClassifications,
         CancellationToken ct)
     {
         foreach (var pdfFile in pdfFiles)
@@ -557,10 +607,10 @@ public class ProcessDossierCommandHandler
                     SHA256.HashData(pdfFile.Content));
 
             var containerName =
-                classification.DocumentType switch
+                classification.DocumentKind switch
                 {
-                    DocumentType.Ac4Declaration
-                        or DocumentType.EadEVadDocument
+                    DocumentKind.Ac4Declaration
+                        or DocumentKind.EadEVadDocument
                         => Ac4BlobContainer,
 
                     _ => InvoiceBlobContainer
@@ -586,21 +636,37 @@ public class ProcessDossierCommandHandler
                     pdfFile.Content.Length,
                     _currentUser.UserId);
 
-            document.SetClassification(
-                classification.DocumentType,
+            document.SetDocumentKind(
+                classification.DocumentKind,
                 classification.Confidence,
                 string.Join(
                     " ",
                     classification.Reasons));
 
-            if (classification.DocumentType
-                == DocumentType.SalesInvoice)
-            {
-                var invoice =
-                    invoices.FirstOrDefault(
-                        i => i.SourceFile
-                             == pdfFile.FileName);
+            var invoice =
+                invoices.FirstOrDefault(
+                    i => i.SourceFile
+                         == pdfFile.FileName);
 
+            var ac4 =
+                ac4Declarations.FirstOrDefault(
+                    a => a.SourceFile
+                         == pdfFile.FileName);
+
+              var roleClassification =
+                roleClassifications[
+                    classification.FileName];
+
+            document.SetDocumentRole(
+                roleClassification.DocumentRole,
+                roleClassification.Confidence,
+                string.Join(
+                    " ",
+                    roleClassification.Reasons));
+
+            if (classification.DocumentKind
+                == DocumentKind.Invoice)
+            {
                 if (invoice is not null)
                 {
                     document.SetExtractionResult(
@@ -619,15 +685,10 @@ public class ProcessDossierCommandHandler
                         invoice);
                 }
             }
-            else if (classification.DocumentType
-                     is DocumentType.Ac4Declaration
-                     or DocumentType.EadEVadDocument)
+            else if (classification.DocumentKind
+                     is DocumentKind.Ac4Declaration
+                     or DocumentKind.EadEVadDocument)
             {
-                var ac4 =
-                    ac4Declarations.FirstOrDefault(
-                        a => a.SourceFile
-                             == pdfFile.FileName);
-
                 if (ac4 is not null)
                 {
                     document.SetExtractionResult(

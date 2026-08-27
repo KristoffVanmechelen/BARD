@@ -47,10 +47,39 @@ public record ParsedAc4Declaration(
     string RawText
 );
 
-/// <summary>Ports core/ingestion/document_classifier.py's DocumentClassification.</summary>
-public record DocumentClassificationResult(
+/// <summary>
+/// Result of the intrinsic document-kind classification stage.
+///
+/// DocumentKind describes what the document physically is.
+/// </summary>
+public sealed record DocumentClassificationResult(
     string FileName,
-    DocumentType DocumentType,
+    DocumentKind DocumentKind,
+    decimal Confidence,
+    IReadOnlyList<string> Reasons
+);
+
+/// <summary>
+/// Context supplied to the document-role classifier.
+///
+/// This contains dossier-level information that is unavailable from an
+/// individual document but may be required to determine its role.
+/// </summary>
+public sealed record DocumentRoleClassificationContext(
+    string CompanyName,
+    string EnterpriseNumber,
+    IReadOnlyList<ParsedExcelClaimRow> ExcelRows
+);
+
+/// <summary>
+/// Result of the contextual document-role classification stage.
+///
+/// DocumentRole describes the function fulfilled by the document within
+/// the dossier. It must be determined after the intrinsic DocumentKind.
+/// </summary>
+public sealed record DocumentRoleClassificationResult(
+    string FileName,
+    DocumentRole DocumentRole,
     decimal Confidence,
     IReadOnlyList<string> Reasons
 );
@@ -71,21 +100,42 @@ public record ParsedExcelClaimRow(
 /// Per-page text + detected tables from classical PDF extraction. Ports
 /// core/ingestion/pdf_reader.py's PageExtraction/PDFExtraction.
 /// </summary>
-public record PdfPageExtraction(int PageNumber, string Text, IReadOnlyList<IReadOnlyList<string>> TableRows);
+public record PdfPageExtraction(
+    int PageNumber,
+    string Text,
+    IReadOnlyList<IReadOnlyList<string>> TableRows
+);
 
-public record PdfExtractionResult(string SourceFile, IReadOnlyList<PdfPageExtraction> Pages)
+public record PdfExtractionResult(
+    string SourceFile,
+    IReadOnlyList<PdfPageExtraction> Pages)
 {
-    public string FullText => string.Join("\n", Pages.Select(p => p.Text));
-    public IReadOnlyList<string> PageTexts => Pages.Select(p => p.Text).ToList();
+    public string FullText =>
+        string.Join("\n", Pages.Select(p => p.Text));
+
+    public IReadOnlyList<string> PageTexts =>
+        Pages.Select(p => p.Text).ToList();
 }
 
 /// <summary>Ports core/ingestion/ocr_detector.py's DocumentOCRAssessment.</summary>
-public record PageOcrAssessment(int PageNumber, int TextCharCount, bool NeedsOcr);
+public record PageOcrAssessment(
+    int PageNumber,
+    int TextCharCount,
+    bool NeedsOcr
+);
 
-public record DocumentOcrAssessment(int TotalPages, IReadOnlyList<PageOcrAssessment> Pages)
+public record DocumentOcrAssessment(
+    int TotalPages,
+    IReadOnlyList<PageOcrAssessment> Pages)
 {
-    public bool AnyPageNeedsOcr => Pages.Any(p => p.NeedsOcr);
-    public IReadOnlyList<int> PagesNeedingOcr => Pages.Where(p => p.NeedsOcr).Select(p => p.PageNumber).ToList();
+    public bool AnyPageNeedsOcr =>
+        Pages.Any(p => p.NeedsOcr);
+
+    public IReadOnlyList<int> PagesNeedingOcr =>
+        Pages
+            .Where(p => p.NeedsOcr)
+            .Select(p => p.PageNumber)
+            .ToList();
 }
 
 /// <summary>Ports core/matching/scoring.py's ScoreBreakdown.</summary>
@@ -105,7 +155,10 @@ public record ScoreBreakdown(
     IReadOnlyList<string> Notes
 );
 
-/// <summary>Ports core/matching/matcher.py's MatchResult (transient — pre-persistence).</summary>
+/// <summary>
+/// Ports core/matching/matcher.py's MatchResult
+/// (transient — pre-persistence).
+/// </summary>
 public record MatchResult(
     ParsedExcelClaimRow ExcelRow,
     ParsedInvoice? MatchedInvoice,
