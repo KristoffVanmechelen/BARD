@@ -23,28 +23,28 @@ public sealed class EadEvadParsingService : IEadEvadParsingService
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex RecordNumberPattern = new(
-        @"Unieke\s+referentie\s+record[^\d]{0,30}(?<number>\d{1,4})",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        @"Unieke\s+referentie\s+record(?:(?!Code\s+accijnsgoed).){0,180}?(?<number>\d{1,4})",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
 
     private static readonly Regex ExciseCodePattern = new(
         @"Code\s+accijnsgoed\s*[:.\-]?\s*(?<code>[A-Z]\d{3})\b(?<description>.*?)(?=(?:GN-?code|Hoeveelheid|Bruto\s+massa|Netto\s+massa|Alcoholgehalte|Graden\s+Plato|$))",
         RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
 
     private static readonly Regex ExciseCodeAnchorPattern = new(
-        @"Code\s+accijnsgoed\s*[:.\-]?\s*(?<code>[A-Z]\d{3})\b",
+        @"(?<![A-Z0-9])(?<code>[A-Z]\d{3})(?![A-Z0-9])",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex QuantityPattern = new(
-        @"Hoeveelheid\s*[:.\-]?\s*(?<value>\d{1,9}(?:[.,]\d{1,6})?)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        @"Hoeveelheid(?:(?!Bruto\s+massa).){0,180}?(?<value>\d{1,9}(?:[.,]\d{1,6})?)",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
 
     private static readonly Regex CnCodePattern = new(
-        @"GN-?code\s*[:.\-]?\s*(?<value>\d{6,10})",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        @"GN-?code(?:(?!Hoeveelheid).){0,180}?(?<value>\d{6,10})",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
 
     private static readonly Regex AlcoholPattern = new(
-        @"Alcoholgehalte\s*[:.\-]?\s*(?<value>\d{1,3}(?:[.,]\d{1,4})?)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        @"Alcoholgehalte(?:(?!Graden\s+Plato).){0,120}?(?<value>\d{1,3}(?:[.,]\d{1,4})?)",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
 
     private static readonly Regex PlatoPattern = new(
         @"Graden\s+Plato\s*[:.\-]?\s*(?<value>\d{1,3}(?:[.,]\d{1,4})?)",
@@ -288,31 +288,71 @@ public sealed class EadEvadParsingService : IEadEvadParsingService
         int recordNumber,
         string block)
     {
-        var codeMatch = ExciseCodePattern.Match(block);
+        var codeMatch =
+            ExciseCodeAnchorPattern.Match(block);
 
         if (!codeMatch.Success)
             return null;
 
         var code =
-            codeMatch.Groups["code"].Value.Trim().ToUpperInvariant();
+            codeMatch.Groups["code"]
+                .Value
+                .Trim()
+                .ToUpperInvariant();
+
+        var afterCode =
+            block[(codeMatch.Index + codeMatch.Length)..];
+
+        var descriptionEnd =
+            Regex.Match(
+                afterCode,
+                @"(?:GN-?code|Hoeveelheid)",
+                RegexOptions.IgnoreCase);
+
+        var rawDescription =
+            descriptionEnd.Success
+                ? afterCode[..descriptionEnd.Index]
+                : afterCode[..Math.Min(afterCode.Length, 400)];
 
         var description =
-            NormalizeDescription(codeMatch.Groups["description"].Value);
+            NormalizeDescription(rawDescription);
 
         var quantity =
-            ParseDecimal(Capture(QuantityPattern, block, "value"));
+            ParseDecimal(
+                Capture(
+                    QuantityPattern,
+                    block,
+                    "value"));
+
+        if (quantity is null)
+            return null;
 
         var cnCode =
-            Capture(CnCodePattern, block, "value");
+            Capture(
+                CnCodePattern,
+                block,
+                "value");
 
         var alcohol =
-            ParseDecimal(Capture(AlcoholPattern, block, "value"));
+            ParseDecimal(
+                Capture(
+                    AlcoholPattern,
+                    block,
+                    "value"));
 
         var plato =
-            ParseDecimal(Capture(PlatoPattern, block, "value"));
+            ParseDecimal(
+                Capture(
+                    PlatoPattern,
+                    block,
+                    "value"));
 
         var mapping =
-            _mappingService.Map(code, description, alcohol, plato);
+            _mappingService.Map(
+                code,
+                description,
+                alcohol,
+                plato);
 
         return new ParsedMovementRecord(
             recordNumber,

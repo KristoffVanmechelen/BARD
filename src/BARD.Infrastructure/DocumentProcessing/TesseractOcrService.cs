@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using BARD.Application.Common.Options;
 using BARD.Application.DocumentProcessing.Interfaces;
@@ -28,89 +29,136 @@ public sealed class TesseractOcrService : IOcrService
         IReadOnlyList<int> pageNumbers,
         CancellationToken ct = default)
     {
-        var results = new Dictionary<int, string>();
-
-        using var memoryStream = new MemoryStream();
+        using var memoryStream =
+            new MemoryStream();
 
         if (pdfStream.CanSeek)
             pdfStream.Position = 0;
 
-        await pdfStream.CopyToAsync(memoryStream, ct);
-        var pdfBytes = memoryStream.ToArray();
+        await pdfStream.CopyToAsync(
+            memoryStream,
+            ct);
 
-        foreach (var pageNumber in pageNumbers.Distinct().OrderBy(x => x))
-        {
-            ct.ThrowIfCancellationRequested();
+        var pdfBytes =
+            memoryStream.ToArray();
 
-            using var bitmap =
-                Conversion.ToImage(
-                    pdfBytes,
-                    page: pageNumber,
-                    options: new(Dpi: _options.Dpi));
+        var pages =
+            pageNumbers
+                .Distinct()
+                .OrderBy(x => x)
+                .ToArray();
 
-            using var pngStream = new MemoryStream();
+        var results =
+            new ConcurrentDictionary<int, string>();
 
-            bitmap.Encode(
-                pngStream,
-                SKEncodedImageFormat.Png,
-                100);
+        using var gate =
+            new SemaphoreSlim(2);
 
-            var pngBytes = pngStream.ToArray();
+        var tasks =
+            pages.Select(
+                async pageNumber =>
+                {
+                    await gate.WaitAsync(ct);
 
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "tesseract",
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
+                    try
+                    {
+                        ct.ThrowIfCancellationRequested();
 
-            startInfo.ArgumentList.Add("stdin");
-            startInfo.ArgumentList.Add("stdout");
-            startInfo.ArgumentList.Add("-l");
-            startInfo.ArgumentList.Add(_options.Language);
+                        using var bitmap =
+                            Conversion.ToImage(
+                                pdfBytes,
+                                page: pageNumber,
+                                options: new(
+                                    Dpi: _options.Dpi));
 
-            if (!string.IsNullOrWhiteSpace(_options.TessDataPath)
-                && Directory.Exists(_options.TessDataPath))
-            {
-                startInfo.ArgumentList.Add("--tessdata-dir");
-                startInfo.ArgumentList.Add(_options.TessDataPath);
-            }
+                        using var pngStream =
+                            new MemoryStream();
 
-            using var process =
-                Process.Start(startInfo)
-                ?? throw new InvalidOperationException(
-                    "Could not start the Tesseract OCR process.");
+                        bitmap.Encode(
+                            pngStream,
+                            SKEncodedImageFormat.Png,
+                            100);
 
-            var outputTask =
-                process.StandardOutput.ReadToEndAsync(ct);
+                        var startInfo =
+                            new ProcessStartInfo
+                            {
+                                FileName = "tesseract",
+                                RedirectStandardInput = true,
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true,
+                                UseShellExecute = false,
+                                CreateNoWindow = true,
+                            };
 
-            var errorTask =
-                process.StandardError.ReadToEndAsync(ct);
+                        startInfo.ArgumentList.Add("stdin");
+                        startInfo.ArgumentList.Add("stdout");
+                        startInfo.ArgumentList.Add("-l");
+                        startInfo.ArgumentList.Add(
+                            _options.Language);
 
-            await process.StandardInput.BaseStream.WriteAsync(
-                pngBytes,
-                ct);
+                        if (!string.IsNullOrWhiteSpace(
+                                _options.TessDataPath)
+                            && Directory.Exists(
+                                _options.TessDataPath))
+                        {
+                            startInfo.ArgumentList.Add(
+                                "--tessdata-dir");
 
-            await process.StandardInput.BaseStream.FlushAsync(ct);
-            process.StandardInput.Close();
+                            startInfo.ArgumentList.Add(
+                                _options.TessDataPath);
+                        }
 
-            await process.WaitForExitAsync(ct);
+                        using var process =
+                            Process.Start(startInfo)
+                            ?? throw new InvalidOperationException(
+                                "Could not start the Tesseract OCR process.");
 
-            var output = await outputTask;
-            var error = await errorTask;
+                        var outputTask =
+                            process.StandardOutput
+                                .ReadToEndAsync(ct);
 
-            if (process.ExitCode != 0)
-            {
-                throw new InvalidOperationException(
-                    $"Tesseract exited with code {process.ExitCode}: {error}");
-            }
+                        var errorTask =
+                            process.StandardError
+                                .ReadToEndAsync(ct);
 
-            results[pageNumber] = output;
-        }
+                        await process.StandardInput.BaseStream
+                            .WriteAsync(
+                                pngStream.ToArray(),
+                                ct);
 
-        return results;
+                        await process.StandardInput.BaseStream
+                            .FlushAsync(ct);
+
+                        process.StandardInput.Close();
+
+                        await process.WaitForExitAsync(ct);
+
+                        var output =
+                            await outputTask;
+
+                        var error =
+                            await errorTask;
+
+                        if (process.ExitCode != 0)
+                        {
+                            throw new InvalidOperationException(
+                                $"Tesseract exited with code {process.ExitCode}: {error}");
+                        }
+
+                        results[pageNumber] = output;
+                    }
+                    finally
+                    {
+                        gate.Release();
+                    }
+                });
+
+        await Task.WhenAll(tasks);
+
+        return results
+            .OrderBy(pair => pair.Key)
+            .ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value);
     }
 }

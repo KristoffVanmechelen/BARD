@@ -59,21 +59,48 @@ public class EadEvadParsingServiceTests
     }
 
     [Fact]
-    public async Task PartialRecordNumberOcr_DoesNotLoseCodeQuantityRows()
+    public async Task RealTableOcrLayout_ExtractsAllTenWineRecords()
     {
         const string ocrText =
             "Elektronisch administratief document (e-VAD)\n" +
             "d.ARC 26BEMTK79C9Q004IA3NP5\n" +
-            "Code accijnsgoed W300 Mousserende wijn\nHoeveelheid 9\n" +
-            "Code accijnsgoed W300 Mousserende wijn\nHoeveelheid 31.500\n" +
-            "Unieke referentie record 3\nCode accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 9\n" +
-            "Unieke referentie record 4\nCode accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 9\n" +
-            "Code accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 9\n" +
-            "Code accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 18\n" +
-            "Code accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 27\n" +
-            "Code accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 49.500\n" +
-            "Unieke referentie record 9\nCode accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 27\n" +
-            "Unieke referentie record 10\nCode accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 4.500\n";
+            "a.Unieke referentie record i.Fiscale merker q.Taal 1\n" +
+            "b.Code accijnsgoed j.Fiscaal merkteken taal r.Merknaam\n" +
+            "W300 - Mousserende wijn\n" +
+            "d.Hoeveelheid l.Oorsprongsbenaming t.Rijpingsperiode\n9\n" +
+
+            "a.Unieke referentie record i.Fiscale merker q.Taal 2\n" +
+            "b.Code accijnsgoed j.Fiscaal merkteken taal r.Merknaam\n" +
+            "W300 - Mousserende wijn\n" +
+            "d.Hoeveelheid l.Oorsprongsbenaming t.Rijpingsperiode\n31.500\n" +
+
+            "a.Unieke referentie record 3\n" +
+            "W200 - Niet-mousserende wijn\n" +
+            "d.Hoeveelheid l.Oorsprongsbenaming t.Rijpingsperiode\n9\n" +
+
+            "a.Unieke referentie record 4\n" +
+            "W200 - Niet-mousserende wijn\n" +
+            "d.Hoeveelheid l.Oorsprongsbenaming t.Rijpingsperiode\n9\n" +
+
+            "W200 - Niet-mousserende wijn\n" +
+            "d.Hoeveelheid l.Oorsprongsbenaming t.Rijpingsperiode\n9\n" +
+
+            "W200 - Niet-mousserende wijn\n" +
+            "d.Hoeveelheid l.Oorsprongsbenaming t.Rijpingsperiode\n18\n" +
+
+            "W200 - Niet-mousserende wijn\n" +
+            "d.Hoeveelheid l.Oorsprongsbenaming t.Rijpingsperiode\n27\n" +
+
+            "W200 - Niet-mousserende wijn\n" +
+            "d.Hoeveelheid l.Oorsprongsbenaming t.Rijpingsperiode\n49.500\n" +
+
+            "a.Unieke referentie record 9\n" +
+            "W200 - Niet-mousserende wijn\n" +
+            "d.Hoeveelheid l.Oorsprongsbenaming t.Rijpingsperiode\n27\n" +
+
+            "a.Unieke referentie record 10\n" +
+            "W200 - Niet-mousserende wijn\n" +
+            "d.Hoeveelheid l.Oorsprongsbenaming t.Rijpingsperiode\n4.500\n";
 
         var sut =
             new EadEvadParsingService(
