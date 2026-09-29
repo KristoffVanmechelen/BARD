@@ -45,7 +45,11 @@ hl
 200
 500
 """;
-        var sut=new Ac4ParsingService(new PdfReader(text),new OcrDetector(),new OcrService());
+        var sut = new Ac4ParsingService(
+            new PdfReader(text),
+            new OcrDetector(),
+            new OcrService(),
+            new DocumentReferenceResolverService());
         await using var stream=new MemoryStream(new byte[]{1});
         var r=await sut.ParseAsync(stream,"AC4.pdf");
         r.Drn.Should().Be("26BEAC4C5G2YU6XJ7B2S9");

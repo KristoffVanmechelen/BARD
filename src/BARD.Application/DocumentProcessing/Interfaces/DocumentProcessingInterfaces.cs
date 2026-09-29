@@ -72,6 +72,13 @@ public interface IAc4ParsingService
         CancellationToken ct = default);
 }
 
+public interface IDocumentReferenceResolver
+{
+    IReadOnlyList<ResolvedDocumentReference> ResolveAll(
+        string text,
+        BARD.Domain.Enums.DocumentKind? documentKind = null);
+}
+
 /// <summary>Ports core/ingestion/excel_reader.py.</summary>
 public interface IExcelClaimReaderService
 {
