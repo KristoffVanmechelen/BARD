@@ -131,6 +131,23 @@ interface DossierLine {
   requiresManualReview: boolean;
 }
 
+interface DossierDocument {
+  id: string;
+  originalFileName: string;
+  documentKind: string;
+  classificationConfidence: number;
+  documentRole: string;
+  roleConfidence: number;
+  roleReasons: string | null;
+  roleConfirmedByUser: boolean;
+  roleConfirmedByDisplayName: string | null;
+  roleConfirmedAtUtc: string | null;
+  extractionMethod: string;
+  extractionConfidence: number;
+  ocrWasRequired: boolean;
+  extractionWarnings: string | null;
+}
+
 interface DossierDetail {
   id: string;
   dossierReference: string;
@@ -138,6 +155,7 @@ interface DossierDetail {
   companyEnterpriseNumber: string | null;
   status: string;
   lines: DossierLine[];
+  documents: DossierDocument[];
 }
 
 export function DossierDetailPage() {
@@ -195,6 +213,102 @@ export function DossierDetailPage() {
         <Typography color="error" sx={{ mb: 2 }}>
           {t('dossier.detail.export_error', 'Could not generate the report. Please try again.')}
         </Typography>
+      )}
+
+      <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
+        {t('dossier.detail.documents_title', 'Uploaded documents')}
+      </Typography>
+
+      <Paper variant="outlined" sx={{ mb: 3 }}>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>{t('dossier.detail.document_file', 'File')}</TableCell>
+              <TableCell>{t('dossier.detail.document_kind', 'Detected kind')}</TableCell>
+              <TableCell>{t('dossier.detail.document_role', 'Role')}</TableCell>
+              <TableCell>{t('dossier.detail.document_extraction', 'Extraction')}</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {data.documents.map((doc) => (
+              <TableRow key={doc.id}>
+                <TableCell>
+                  <Typography variant="body2">
+                    {doc.originalFileName}
+                  </Typography>
+
+                  {doc.extractionWarnings && (
+                    <Typography variant="caption" color="warning.main" display="block">
+                      {doc.extractionWarnings}
+                    </Typography>
+                  )}
+                </TableCell>
+
+                <TableCell>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Chip
+                      size="small"
+                      label={doc.documentKind}
+                      color={doc.documentKind === 'Unknown' ? 'warning' : 'default'}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      {Math.round(doc.classificationConfidence * 100)}%
+                    </Typography>
+                  </Stack>
+                </TableCell>
+
+                <TableCell>
+                  <Typography variant="body2">
+                    {doc.documentRole} · {Math.round(doc.roleConfidence * 100)}%
+                  </Typography>
+
+                  {doc.roleReasons && (
+                    <Typography variant="caption" color="text.secondary">
+                      {doc.roleReasons}
+                    </Typography>
+                  )}
+                </TableCell>
+
+                <TableCell>
+                  <Typography variant="body2">
+                    {doc.extractionMethod} · {Math.round(doc.extractionConfidence * 100)}%
+                  </Typography>
+
+                  {doc.ocrWasRequired && (
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      OCR used
+                    </Typography>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+
+            {data.documents.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={4}>
+                  <Typography color="text.secondary">
+                    {t('dossier.detail.no_documents', 'No uploaded documents found.')}
+                  </Typography>
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Paper>
+
+      <Typography variant="h6" sx={{ mb: 1 }}>
+        {t('dossier.detail.claim_lines_title', 'Claim lines')}
+      </Typography>
+
+      {data.lines.length === 0 && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Typography color="text.secondary">
+            {t(
+              'dossier.detail.no_claim_lines',
+              'No claim lines were identified. The uploaded documents are still retained and shown above.',
+            )}
+          </Typography>
+        </Paper>
       )}
 
       <Table size="small">

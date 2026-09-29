@@ -75,11 +75,14 @@ public sealed class DocumentRoleClassifierService : IDocumentRoleClassifierServi
 
         if (ac4Declaration is not null)
         {
-            if (!string.IsNullOrWhiteSpace(ac4Declaration.Mrn))
+            if (!string.IsNullOrWhiteSpace(ac4Declaration.Drn))
             {
-                reasons.Add(
-                    $"The parsed declaration contains MRN {ac4Declaration.Mrn}.");
-
+                reasons.Add($"The parsed declaration contains DRN {ac4Declaration.Drn}.");
+                confidence += 0.03m;
+            }
+            else if (!string.IsNullOrWhiteSpace(ac4Declaration.Mrn))
+            {
+                reasons.Add($"The parsed declaration contains MRN {ac4Declaration.Mrn}.");
                 confidence += 0.03m;
             }
 

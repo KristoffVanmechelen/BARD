@@ -32,7 +32,15 @@ public record ParsedInvoice(
     string RawText
 );
 
-/// <summary>Ports core/ingestion/ac4_parser.py's Ac4Declaration dataclass.</summary>
+public record ParsedAc4Article(
+    int ArticleNumber,
+    string? ExciseCode,
+    string? Description,
+    string? AdditionalDescription,
+    decimal? TaxBase,
+    string? Unit
+);
+
 public record ParsedAc4Declaration(
     string? Mrn,
     DateOnly? Ac4Date,
@@ -44,7 +52,16 @@ public record ParsedAc4Declaration(
     ExtractionMethod ExtractionMethod,
     decimal ExtractionConfidence,
     IReadOnlyList<string> ExtractionWarnings,
-    string RawText
+    string RawText,
+    string? Drn = null,
+    string? Lrn = null,
+    DateOnly? PeriodStart = null,
+    DateOnly? PeriodEnd = null,
+    string? Declarant = null,
+    string? PaymentType = null,
+    string? AccountNumber = null,
+    decimal? TotalAmount = null,
+    IReadOnlyList<ParsedAc4Article>? Articles = null
 );
 
 /// <summary>
