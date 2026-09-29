@@ -49,12 +49,61 @@ public class EadEvadParsingServiceTests
             await sut.ParseAsync(stream, "movement.pdf");
 
         result.Arc.Should().Be("26BEMTK79C9Q004IA3NP5");
+        result.MovementDocumentType.Should().Be("e-VAD");
         result.Records.Should().HaveCount(3);
         result.Records[0].BelgianExciseCode.Should().Be("S109");
         result.Records[0].QuantityLitres.Should().Be(9m);
         result.Records[1].QuantityLitres.Should().Be(31.5m);
         result.Records[2].BelgianExciseCode.Should().Be("S101");
         result.Records[2].QuantityLitres.Should().Be(9m);
+    }
+
+    [Fact]
+    public async Task PartialRecordNumberOcr_DoesNotLoseCodeQuantityRows()
+    {
+        const string ocrText =
+            "Elektronisch administratief document (e-VAD)\n" +
+            "d.ARC 26BEMTK79C9Q004IA3NP5\n" +
+            "Code accijnsgoed W300 Mousserende wijn\nHoeveelheid 9\n" +
+            "Code accijnsgoed W300 Mousserende wijn\nHoeveelheid 31.500\n" +
+            "Unieke referentie record 3\nCode accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 9\n" +
+            "Unieke referentie record 4\nCode accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 9\n" +
+            "Code accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 9\n" +
+            "Code accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 18\n" +
+            "Code accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 27\n" +
+            "Code accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 49.500\n" +
+            "Unieke referentie record 9\nCode accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 27\n" +
+            "Unieke referentie record 10\nCode accijnsgoed W200 Niet-mousserende wijn\nHoeveelheid 4.500\n";
+
+        var sut =
+            new EadEvadParsingService(
+                new EmptyPdfReader(),
+                new AllOcrDetector(),
+                new FixedOcrService(ocrText),
+                new DocumentReferenceResolverService(),
+                new ExciseCodeMappingService());
+
+        await using var stream =
+            new MemoryStream(new byte[] { 1 });
+
+        var result =
+            await sut.ParseAsync(
+                stream,
+                "movement.pdf");
+
+        result.Records.Should().HaveCount(10);
+
+        result.Records
+            .Where(r => r.BelgianExciseCode == "S109")
+            .Sum(r => r.QuantityLitres ?? 0m)
+            .Should()
+            .Be(40.5m);
+
+        result.Records
+            .Where(r => r.BelgianExciseCode == "S101")
+            .Sum(r => r.QuantityLitres ?? 0m)
+            .Should()
+            .Be(153m);
     }
 
     private sealed class EmptyPdfReader : IPdfTextExtractionService

@@ -167,6 +167,56 @@ interface DossierDetail {
   documents: DossierDocument[];
 }
 
+function getExtractedField(
+  doc: DossierDocument,
+  name: string,
+) {
+  return doc.extractedFields.find(
+    (field) => field.fieldName === name,
+  )?.value ?? null;
+}
+
+function dossierDocumentKindLabel(
+  doc: DossierDocument,
+) {
+  if (doc.documentKind === 'Ac4Declaration') {
+    return 'AC4 declaration';
+  }
+
+  if (doc.documentKind === 'EadEVadDocument') {
+    return getExtractedField(
+      doc,
+      'MovementDocumentType',
+    ) ?? 'e-AD / e-VAD';
+  }
+
+  return doc.documentKind;
+}
+
+function quantityInLitres(
+  quantity: string | null | undefined,
+  unit: string | null | undefined,
+) {
+  if (quantity == null) return null;
+
+  const parsed = Number(quantity);
+  if (!Number.isFinite(parsed)) return null;
+
+  return (unit ?? '').toLowerCase().startsWith('hl')
+    ? parsed * 100
+    : parsed;
+}
+
+function formatQuantity(
+  quantity: number | null,
+) {
+  if (quantity == null) return '—';
+
+  return quantity
+    .toFixed(3)
+    .replace(/\.?0+$/, '');
+}
+
 export function DossierDetailPage() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
@@ -233,9 +283,7 @@ export function DossierDetailPage() {
           <TableHead>
             <TableRow>
               <TableCell>{t('dossier.detail.document_file', 'File')}</TableCell>
-              <TableCell>{t('dossier.detail.document_kind', 'Detected kind')}</TableCell>
-              <TableCell>{t('dossier.detail.document_role', 'Role')}</TableCell>
-              <TableCell>{t('dossier.detail.document_extraction', 'Extraction')}</TableCell>
+              <TableCell>{t('dossier.detail.document_kind', 'Kind')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -254,6 +302,7 @@ export function DossierDetailPage() {
 
               const generalFields = doc.extractedFields.filter((field) => {
                 if (field.fieldName.startsWith('Article[')) return false;
+                if (field.fieldName === 'MovementDocumentType') return false;
 
                 if (
                   doc.documentKind === 'Ac4Declaration'
@@ -306,61 +355,20 @@ export function DossierDetailPage() {
                   <Typography variant="body2">
                     {doc.originalFileName}
                   </Typography>
-
-                  {doc.extractionWarnings && (
-                    <Typography variant="caption" color="warning.main" display="block">
-                      {doc.extractionWarnings}
-                    </Typography>
-                  )}
                 </TableCell>
 
                 <TableCell>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Chip
-                      size="small"
-                      label={doc.documentKind}
-                      color={doc.documentKind === 'Unknown' ? 'warning' : 'default'}
-                    />
-                    <Typography variant="caption" color="text.secondary">
-                      {Math.round(doc.classificationConfidence * 100)}%
-                    </Typography>
-                  </Stack>
-
-                  {doc.classificationReasons && (
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      {doc.classificationReasons}
-                    </Typography>
-                  )}
-                </TableCell>
-
-                <TableCell>
-                  <Typography variant="body2">
-                    {doc.documentRole} · {Math.round(doc.roleConfidence * 100)}%
-                  </Typography>
-
-                  {doc.roleReasons && (
-                    <Typography variant="caption" color="text.secondary">
-                      {doc.roleReasons}
-                    </Typography>
-                  )}
-                </TableCell>
-
-                <TableCell>
-                  <Typography variant="body2">
-                    {doc.extractionMethod} · {Math.round(doc.extractionConfidence * 100)}%
-                  </Typography>
-
-                  {doc.ocrWasRequired && (
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      OCR used
-                    </Typography>
-                  )}
+                  <Chip
+                    size="small"
+                    label={dossierDocumentKindLabel(doc)}
+                    color={doc.documentKind === 'Unknown' ? 'warning' : 'default'}
+                  />
                 </TableCell>
               </TableRow>
 
               {doc.extractedFields.length > 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} sx={{ backgroundColor: 'action.hover' }}>
+                  <TableCell colSpan={2} sx={{ backgroundColor: 'action.hover' }}>
                     <Typography variant="subtitle2" sx={{ mb: 1 }}>
                       {t('dossier.detail.extracted_facts', 'Extracted facts')}
                     </Typography>
@@ -387,20 +395,27 @@ export function DossierDetailPage() {
                         <TableHead>
                           <TableRow>
                             <TableCell>#</TableCell>
-                            <TableCell>Excise code</TableCell>
-                            <TableCell align="right">Quantity</TableCell>
-                            <TableCell>Unit</TableCell>
+                            <TableCell>S-code</TableCell>
+                            <TableCell align="right">Quantity (L)</TableCell>
                           </TableRow>
                         </TableHead>
                         <TableBody>
-                          {articles.map(([number, article]) => (
-                            <TableRow key={number}>
-                              <TableCell>{number}</TableCell>
-                              <TableCell>{article.ExciseCode ?? '—'}</TableCell>
-                              <TableCell align="right">{article.TaxBase ?? '—'}</TableCell>
-                              <TableCell>{article.Unit ?? '—'}</TableCell>
-                            </TableRow>
-                          ))}
+                          {articles.map(([number, article]) => {
+                            const litres = quantityInLitres(
+                              article.TaxBase,
+                              article.Unit,
+                            );
+
+                            return (
+                              <TableRow key={number}>
+                                <TableCell>{number}</TableCell>
+                                <TableCell>{article.ExciseCode ?? '—'}</TableCell>
+                                <TableCell align="right">
+                                  {formatQuantity(litres)}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
                         </TableBody>
                       </Table>
                     )}
@@ -411,9 +426,8 @@ export function DossierDetailPage() {
                           <TableRow>
                             <TableCell>Record</TableCell>
                             <TableCell>EMCS code</TableCell>
-                            <TableCell>Belgian S-code</TableCell>
-                            <TableCell align="right">Quantity</TableCell>
-                            <TableCell>Unit</TableCell>
+                            <TableCell>S-code</TableCell>
+                            <TableCell align="right">Quantity (L)</TableCell>
                           </TableRow>
                         </TableHead>
                         <TableBody>
@@ -423,7 +437,6 @@ export function DossierDetailPage() {
                               <TableCell>{record.EmcsExciseCode ?? '—'}</TableCell>
                               <TableCell>{record.BelgianExciseCode ?? 'unmapped'}</TableCell>
                               <TableCell align="right">{record.QuantityLitres ?? '—'}</TableCell>
-                              <TableCell>{record.Unit ?? 'L'}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -438,7 +451,7 @@ export function DossierDetailPage() {
 
             {data.documents.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4}>
+                <TableCell colSpan={2}>
                   <Typography color="text.secondary">
                     {t('dossier.detail.no_documents', 'No uploaded documents found.')}
                   </Typography>

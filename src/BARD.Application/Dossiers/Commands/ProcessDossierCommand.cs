@@ -904,6 +904,7 @@ public class ProcessDossierCommandHandler
         Record("ARC", movement.Arc);
         Record("LRN", movement.Lrn);
         Record("MovementDateTime", movement.ValidationDateTime);
+        Record("MovementDocumentType", movement.MovementDocumentType);
 
         foreach (var record in movement.Records)
         {

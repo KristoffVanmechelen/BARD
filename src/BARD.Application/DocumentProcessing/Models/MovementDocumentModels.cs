@@ -25,6 +25,7 @@ public sealed record ParsedMovementDocument(
     string? Arc,
     string? Lrn,
     string? ValidationDateTime,
+    string? MovementDocumentType,
     IReadOnlyList<ParsedMovementRecord> Records,
     string SourceFile,
     ExtractionMethod ExtractionMethod,

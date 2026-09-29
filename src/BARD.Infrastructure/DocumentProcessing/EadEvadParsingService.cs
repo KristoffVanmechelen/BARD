@@ -30,6 +30,10 @@ public sealed class EadEvadParsingService : IEadEvadParsingService
         @"Code\s+accijnsgoed\s*[:.\-]?\s*(?<code>[A-Z]\d{3})\b(?<description>.*?)(?=(?:GN-?code|Hoeveelheid|Bruto\s+massa|Netto\s+massa|Alcoholgehalte|Graden\s+Plato|$))",
         RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
 
+    private static readonly Regex ExciseCodeAnchorPattern = new(
+        @"Code\s+accijnsgoed\s*[:.\-]?\s*(?<code>[A-Z]\d{3})\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static readonly Regex QuantityPattern = new(
         @"Hoeveelheid\s*[:.\-]?\s*(?<value>\d{1,9}(?:[.,]\d{1,6})?)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -127,6 +131,7 @@ public sealed class EadEvadParsingService : IEadEvadParsingService
 
         var lrn = Capture(LrnPattern, rawText);
         var validationDateTime = Capture(ValidationDateTimePattern, rawText);
+        var movementDocumentType = DetectMovementDocumentType(rawText);
         var records = ParseRecords(rawText);
 
         if (string.IsNullOrWhiteSpace(arc))
@@ -158,6 +163,7 @@ public sealed class EadEvadParsingService : IEadEvadParsingService
             arc,
             lrn,
             validationDateTime,
+            movementDocumentType,
             records,
             fileName,
             method,
@@ -166,79 +172,116 @@ public sealed class EadEvadParsingService : IEadEvadParsingService
             rawText);
     }
 
-    private IReadOnlyList<ParsedMovementRecord> ParseRecords(string text)
+    private IReadOnlyList<ParsedMovementRecord> ParseRecords(
+        string text)
     {
-        var starts =
-            RecordNumberPattern.Matches(text)
+        var codeAnchors =
+            ExciseCodeAnchorPattern.Matches(text)
                 .Cast<Match>()
                 .ToList();
 
-        var records = new List<ParsedMovementRecord>();
+        if (codeAnchors.Count == 0)
+            return Array.Empty<ParsedMovementRecord>();
 
-        for (var i = 0; i < starts.Count; i++)
+        var records =
+            new List<ParsedMovementRecord>();
+
+        for (var i = 0; i < codeAnchors.Count; i++)
         {
-            var current = starts[i];
+            var anchor = codeAnchors[i];
 
-            if (!int.TryParse(
-                    current.Groups["number"].Value,
-                    out var recordNumber))
-            {
-                continue;
-            }
+            var prefixStart =
+                i == 0
+                    ? Math.Max(0, anchor.Index - 500)
+                    : codeAnchors[i - 1].Index
+                      + codeAnchors[i - 1].Length;
+
+            var prefix =
+                text[prefixStart..anchor.Index];
 
             var blockEnd =
-                i + 1 < starts.Count
-                    ? starts[i + 1].Index
+                i + 1 < codeAnchors.Count
+                    ? codeAnchors[i + 1].Index
                     : text.Length;
 
-            var block = text[current.Index..blockEnd];
+            var block =
+                text[anchor.Index..blockEnd];
 
-            var parsed = ParseRecordBlock(recordNumber, block);
+            var recordNumber =
+                ResolveRecordNumber(
+                    prefix,
+                    fallback: i + 1);
 
-            if (parsed is not null)
-                records.Add(parsed);
+            var parsed =
+                ParseRecordBlock(
+                    recordNumber,
+                    block);
+
+            if (parsed is null)
+                continue;
+
+            records.Add(parsed);
         }
 
-        if (records.Count > 0)
+        return records
+            .GroupBy(
+                record =>
+                    new
+                    {
+                        record.RecordNumber,
+                        record.EmcsExciseCode,
+                        record.QuantityLitres,
+                    })
+            .Select(group => group.First())
+            .OrderBy(record => record.RecordNumber)
+            .ToArray();
+    }
+
+    private static int ResolveRecordNumber(
+        string block,
+        int fallback)
+    {
+        var matches =
+            RecordNumberPattern.Matches(block)
+                .Cast<Match>()
+                .ToList();
+
+        for (var i = matches.Count - 1; i >= 0; i--)
         {
-            return records
-                .GroupBy(r => r.RecordNumber)
-                .Select(g => g.First())
-                .OrderBy(r => r.RecordNumber)
-                .ToArray();
+            if (int.TryParse(
+                    matches[i].Groups["number"].Value,
+                    out var parsed))
+            {
+                return parsed;
+            }
         }
 
-        var fallbackNumber = 1;
+        return fallback;
+    }
 
-        foreach (Match match in FallbackCodeQuantityPattern.Matches(text))
+    private static string? DetectMovementDocumentType(
+        string text)
+    {
+        if (Regex.IsMatch(
+                text,
+                @"\be\s*[-–]?\s*VAD\b",
+                RegexOptions.IgnoreCase)
+            || text.Contains(
+                "vereenvoudigd administratief document",
+                StringComparison.OrdinalIgnoreCase))
         {
-            var code =
-                match.Groups["code"].Value.Trim().ToUpperInvariant();
-
-            var description =
-                NormalizeDescription(match.Groups["description"].Value);
-
-            var quantity =
-                ParseDecimal(match.Groups["quantity"].Value);
-
-            var mapping =
-                _mappingService.Map(code, description, null, null);
-
-            records.Add(
-                new ParsedMovementRecord(
-                    fallbackNumber++,
-                    code,
-                    mapping.BelgianExciseCode,
-                    quantity,
-                    "L",
-                    null,
-                    null,
-                    null,
-                    description,
-                    mapping.Reason));
+            return "e-VAD";
         }
 
-        return records;
+        if (Regex.IsMatch(
+                text,
+                @"\be\s*[-–]?\s*AD\b",
+                RegexOptions.IgnoreCase))
+        {
+            return "e-AD";
+        }
+
+        return null;
     }
 
     private ParsedMovementRecord? ParseRecordBlock(
@@ -324,6 +367,7 @@ public sealed class EadEvadParsingService : IEadEvadParsingService
         string fileName,
         string warning)
         => new(
+            null,
             null,
             null,
             null,
