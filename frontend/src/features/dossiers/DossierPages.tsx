@@ -239,9 +239,29 @@ export function DossierDetailPage() {
           </TableHead>
           <TableBody>
             {data.documents.map((doc) => {
-              const generalFields = doc.extractedFields.filter(
-                (field) => !field.fieldName.startsWith('Article['),
-              );
+              const ac4VisibleFields = new Set([
+                'DRN',
+                'MRN',
+                'ARC',
+                'LRN',
+                'ValidationDate',
+                'PeriodStart',
+                'PeriodEnd',
+                'Declarant',
+              ]);
+
+              const generalFields = doc.extractedFields.filter((field) => {
+                if (field.fieldName.startsWith('Article[')) return false;
+
+                if (
+                  doc.documentKind === 'Ac4Declaration'
+                  || doc.documentKind === 'EadEVadDocument'
+                ) {
+                  return ac4VisibleFields.has(field.fieldName);
+                }
+
+                return true;
+              });
 
               const articleMap = new Map<number, Record<string, string | null>>();
 
@@ -344,8 +364,7 @@ export function DossierDetailPage() {
                           <TableRow>
                             <TableCell>#</TableCell>
                             <TableCell>Excise code</TableCell>
-                            <TableCell>Description</TableCell>
-                            <TableCell align="right">Tax base</TableCell>
+                            <TableCell align="right">Quantity</TableCell>
                             <TableCell>Unit</TableCell>
                           </TableRow>
                         </TableHead>
@@ -354,7 +373,6 @@ export function DossierDetailPage() {
                             <TableRow key={number}>
                               <TableCell>{number}</TableCell>
                               <TableCell>{article.ExciseCode ?? '—'}</TableCell>
-                              <TableCell>{article.Description ?? '—'}</TableCell>
                               <TableCell align="right">{article.TaxBase ?? '—'}</TableCell>
                               <TableCell>{article.Unit ?? '—'}</TableCell>
                             </TableRow>
