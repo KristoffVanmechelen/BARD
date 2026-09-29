@@ -46,41 +46,29 @@ export function FileDropZone({
   const addFiles = (incomingFiles: File[]) => {
     setWarning(null);
 
-    const unsupported = incomingFiles.filter((file) => !isAcceptedDossierFile(file));
-    const incomingExcelFiles = incomingFiles.filter(isExcelFile);
-    const incomingPdfFiles = incomingFiles.filter(isPdfFile);
+    const unsupported = incomingFiles.filter(
+      (file) => !isAcceptedDossierFile(file),
+    );
+
+    const accepted = incomingFiles.filter(isAcceptedDossierFile);
 
     if (unsupported.length > 0) {
       setWarning(
         t(
           'dossier.upload.unsupported_files',
-          'Only Excel files (.xlsx or .xls) and PDF files are allowed.',
+          'These file types are not supported yet. BARD currently accepts Excel workbooks and PDFs.',
         ),
       );
     }
 
-    let nextFiles = [...files];
-
-    if (incomingExcelFiles.length > 0) {
-      const latestExcelFile = incomingExcelFiles[incomingExcelFiles.length - 1];
-      nextFiles = nextFiles.filter((file) => !isExcelFile(file));
-      nextFiles.push(latestExcelFile);
-
-      if (incomingExcelFiles.length > 1) {
-        setWarning(
-          t(
-            'dossier.upload.single_excel_warning',
-            'Only one Excel claim can be processed. The last selected Excel file was kept.',
-          ),
-        );
-      }
-    }
-
+    const nextFiles = [...files];
     const existingKeys = new Set(nextFiles.map(getFileKey));
-    for (const pdfFile of incomingPdfFiles) {
-      const key = getFileKey(pdfFile);
+
+    for (const file of accepted) {
+      const key = getFileKey(file);
+
       if (!existingKeys.has(key)) {
-        nextFiles.push(pdfFile);
+        nextFiles.push(file);
         existingKeys.add(key);
       }
     }
