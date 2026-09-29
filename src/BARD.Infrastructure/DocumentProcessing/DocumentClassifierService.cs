@@ -92,6 +92,7 @@ public class DocumentClassifierService : IDocumentClassifierService
             _ocrDetection.AssessPages(pageTexts);
 
         var ocrUsed = false;
+        string? ocrFailure = null;
 
         if (assessment.AnyPageNeedsOcr)
         {
@@ -121,8 +122,9 @@ public class DocumentClassifierService : IDocumentClassifierService
                     ocrUsed = true;
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                ocrFailure = ex.Message;
                 // Continue with any classical text that was available.
             }
         }
@@ -135,7 +137,9 @@ public class DocumentClassifierService : IDocumentClassifierService
         {
             return Unknown(
                 fileName,
-                "No usable text found after classical extraction/OCR classification.");
+                ocrFailure is null
+                    ? "No usable text found after classical extraction/OCR classification."
+                    : $"OCR failed during classification: {ocrFailure}");
         }
 
         var movementHits =
@@ -201,7 +205,9 @@ public class DocumentClassifierService : IDocumentClassifierService
 
         return Unknown(
             fileName,
-            "Content did not establish a reliable document kind after available text/OCR analysis.");
+            ocrFailure is null
+                ? "Content did not establish a reliable document kind after available text/OCR analysis."
+                : $"Content remained unclassified because OCR failed: {ocrFailure}");
     }
 
     private static DocumentClassificationResult Unknown(

@@ -5,7 +5,13 @@ ARG NODE_VERSION=20
 RUN rm -f /etc/apt/sources.list.d/yarn.list \
     /etc/apt/sources.list.d/yarn.sources \
     && curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
+    && apt-get install -y --no-install-recommends \
+        nodejs \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        tesseract-ocr-nld \
+        tesseract-ocr-fra \
+        tesseract-ocr-deu \
     && npm install -g npm@10 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
