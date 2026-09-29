@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link as RouterLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -131,6 +131,13 @@ interface DossierLine {
   requiresManualReview: boolean;
 }
 
+interface DossierExtractedField {
+  fieldName: string;
+  value: string | null;
+  pageNumber: number | null;
+  confidence: number;
+}
+
 interface DossierDocument {
   id: string;
   originalFileName: string;
@@ -146,6 +153,7 @@ interface DossierDocument {
   extractionConfidence: number;
   ocrWasRequired: boolean;
   extractionWarnings: string | null;
+  extractedFields: DossierExtractedField[];
 }
 
 interface DossierDetail {
@@ -230,8 +238,32 @@ export function DossierDetailPage() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {data.documents.map((doc) => (
-              <TableRow key={doc.id}>
+            {data.documents.map((doc) => {
+              const generalFields = doc.extractedFields.filter(
+                (field) => !field.fieldName.startsWith('Article['),
+              );
+
+              const articleMap = new Map<number, Record<string, string | null>>();
+
+              doc.extractedFields
+                .filter((field) => field.fieldName.startsWith('Article['))
+                .forEach((field) => {
+                  const match = field.fieldName.match(/^Article\[(\d+)\]\.(.+)$/);
+                  if (!match) return;
+
+                  const articleNumber = Number(match[1]);
+                  const propertyName = match[2];
+                  const current = articleMap.get(articleNumber) ?? {};
+                  current[propertyName] = field.value;
+                  articleMap.set(articleNumber, current);
+                });
+
+              const articles = [...articleMap.entries()]
+                .sort(([a], [b]) => a - b);
+
+              return (
+                <Fragment key={doc.id}>
+              <TableRow>
                 <TableCell>
                   <Typography variant="body2">
                     {doc.originalFileName}
@@ -281,7 +313,63 @@ export function DossierDetailPage() {
                   )}
                 </TableCell>
               </TableRow>
-            ))}
+
+              {doc.extractedFields.length > 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} sx={{ backgroundColor: 'action.hover' }}>
+                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                      {t('dossier.detail.extracted_facts', 'Extracted facts')}
+                    </Typography>
+
+                    {generalFields.length > 0 && (
+                      <Stack
+                        direction="row"
+                        spacing={2}
+                        useFlexGap
+                        flexWrap="wrap"
+                        sx={{ mb: articles.length > 0 ? 1.5 : 0 }}
+                      >
+                        {generalFields.map((field) => (
+                          <Typography key={field.fieldName} variant="body2">
+                            <strong>{field.fieldName}:</strong>{' '}
+                            {field.value ?? '—'}
+                          </Typography>
+                        ))}
+                      </Stack>
+                    )}
+
+                    {articles.length > 0 && (
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>#</TableCell>
+                            <TableCell>Excise code</TableCell>
+                            <TableCell>Description</TableCell>
+                            <TableCell>Additional</TableCell>
+                            <TableCell align="right">Tax base</TableCell>
+                            <TableCell>Unit</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {articles.map(([number, article]) => (
+                            <TableRow key={number}>
+                              <TableCell>{number}</TableCell>
+                              <TableCell>{article.ExciseCode ?? '—'}</TableCell>
+                              <TableCell>{article.Description ?? '—'}</TableCell>
+                              <TableCell>{article.AdditionalDescription ?? '—'}</TableCell>
+                              <TableCell align="right">{article.TaxBase ?? '—'}</TableCell>
+                              <TableCell>{article.Unit ?? '—'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </TableCell>
+                </TableRow>
+              )}
+                </Fragment>
+              );
+            })}
 
             {data.documents.length === 0 && (
               <TableRow>

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using BARD.Application.Common.Interfaces;
 using BARD.Application.Common.Services;
@@ -805,6 +806,10 @@ public class ProcessDossierCommandHandler
                         ac4.ExtractionMethod
                         == ExtractionMethod.Ocr);
 
+                    RecordAc4Provenance(
+                        document,
+                        ac4);
+
                     _db.Ac4Declarations.Add(
                         Domain.Entities.Ac4Declaration.Create(
                             document.Id,
@@ -825,6 +830,48 @@ public class ProcessDossierCommandHandler
             }
 
             _db.DossierDocuments.Add(document);
+        }
+    }
+
+    private static void RecordAc4Provenance(
+        DossierDocument document,
+        ParsedAc4Declaration ac4)
+    {
+        void Record(string fieldName, string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            document.RecordExtractedField(
+                fieldName,
+                value,
+                null,
+                null,
+                ac4.ExtractionConfidence);
+        }
+
+        Record("DRN", ac4.Drn);
+        Record("MRN", ac4.Mrn);
+        Record("LRN", ac4.Lrn);
+        Record("ValidationDate", ac4.Ac4Date?.ToString("yyyy-MM-dd"));
+        Record("PeriodStart", ac4.PeriodStart?.ToString("yyyy-MM-dd"));
+        Record("PeriodEnd", ac4.PeriodEnd?.ToString("yyyy-MM-dd"));
+        Record("Declarant", ac4.Declarant);
+        Record("PaymentType", ac4.PaymentType);
+        Record("AccountNumber", ac4.AccountNumber);
+        Record("TotalAmount", ac4.TotalAmount?.ToString(CultureInfo.InvariantCulture));
+
+        foreach (var article in ac4.Articles ?? Array.Empty<ParsedAc4Article>())
+        {
+            var prefix = $"Article[{article.ArticleNumber}]";
+
+            Record($"{prefix}.ExciseCode", article.ExciseCode);
+            Record($"{prefix}.Description", article.Description);
+            Record($"{prefix}.AdditionalDescription", article.AdditionalDescription);
+            Record($"{prefix}.TaxBase", article.TaxBase?.ToString(CultureInfo.InvariantCulture));
+            Record($"{prefix}.Unit", article.Unit);
         }
     }
 

@@ -64,6 +64,13 @@ public record DossierDetailDto(
     IReadOnlyList<DossierDocumentDto> Documents
 );
 
+public record DossierExtractedFieldDto(
+    string FieldName,
+    string? Value,
+    int? PageNumber,
+    decimal Confidence
+);
+
 public record DossierDocumentDto(
     Guid Id,
     string OriginalFileName,
@@ -78,7 +85,8 @@ public record DossierDocumentDto(
     string ExtractionMethod,
     decimal ExtractionConfidence,
     bool OcrWasRequired,
-    string? ExtractionWarnings
+    string? ExtractionWarnings,
+    IReadOnlyList<DossierExtractedFieldDto> ExtractedFields
 );
 
 public record CorrectInvoiceRoleRequest(
