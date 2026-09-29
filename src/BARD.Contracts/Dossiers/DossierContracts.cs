@@ -76,6 +76,7 @@ public record DossierDocumentDto(
     string OriginalFileName,
     string DocumentKind,
     decimal ClassificationConfidence,
+    string? ClassificationReasons,
     string DocumentRole,
     decimal RoleConfidence,
     string? RoleReasons,

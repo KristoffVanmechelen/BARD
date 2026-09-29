@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using BARD.Application.DocumentProcessing.Interfaces;
 using BARD.Application.DocumentProcessing.Models;
 using BARD.Domain.Enums;
@@ -37,6 +38,10 @@ public class DocumentClassifierService : IDocumentClassifierService
         "unieke referentie record",
         "d.arc",
     };
+
+    private static readonly Regex ArcLikePattern = new(
+        @"\b\d{2}BEM[A-Z0-9]{8,}\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly IPdfTextExtractionService _pdfTextExtraction;
     private readonly IOcrDetectionService _ocrDetection;
@@ -151,16 +156,47 @@ public class DocumentClassifierService : IDocumentClassifierService
         var invoiceHits =
             InvoiceMarkers.Where(text.Contains).Distinct().ToList();
 
-        if (movementHits.Count >= 2
+        var hasStrongMovementHeading =
+            text.Contains("elektronisch administratief document")
+            || text.Contains("hoofdgedeelte e-vad");
+
+        var compactUpper =
+            new string(
+                text
+                    .Where(char.IsLetterOrDigit)
+                    .Select(char.ToUpperInvariant)
+                    .ToArray());
+
+        var hasArcLikeReference =
+            ArcLikePattern.IsMatch(compactUpper);
+
+        var movementEstablished =
+            hasStrongMovementHeading
+            || movementHits.Count >= 2
+            || (hasArcLikeReference && movementHits.Count >= 1);
+
+        if (movementEstablished
             && movementHits.Count >= ac4Hits.Count)
         {
+            var confidence =
+                hasStrongMovementHeading || hasArcLikeReference
+                    ? 0.95m
+                    : 0.88m;
+
+            if (ocrUsed)
+                confidence -= 0.03m;
+
             return new DocumentClassificationResult(
                 fileName,
                 DocumentKind.EadEVadDocument,
-                ocrUsed ? 0.92m : 0.95m,
+                confidence,
                 new[]
                 {
-                    $"Document contains e-AD/e-VAD markers: {string.Join(", ", movementHits.Take(4))}."
+                    "Content establishes an e-AD/e-VAD movement document."
+                    + (hasArcLikeReference ? " ARC-like reference detected." : string.Empty)
+                    + (movementHits.Count > 0
+                        ? $" Markers: {string.Join(", ", movementHits.Take(4))}."
+                        : string.Empty)
                     + (ocrUsed ? " Classification used OCR." : string.Empty),
                 });
         }

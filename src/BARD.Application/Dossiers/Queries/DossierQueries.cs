@@ -174,6 +174,7 @@ public class GetDossierDetailQueryHandler
                 doc.OriginalFileName,
                 doc.DocumentKind.ToString(),
                 doc.ClassificationConfidence,
+                doc.ClassificationReasons,
                 doc.DocumentRole.ToString(),
                 doc.RoleConfidence,
                 doc.RoleReasons,

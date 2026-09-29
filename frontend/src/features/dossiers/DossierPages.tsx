@@ -143,6 +143,7 @@ interface DossierDocument {
   originalFileName: string;
   documentKind: string;
   classificationConfidence: number;
+  classificationReasons: string | null;
   documentRole: string;
   roleConfidence: number;
   roleReasons: string | null;
@@ -324,6 +325,12 @@ export function DossierDetailPage() {
                       {Math.round(doc.classificationConfidence * 100)}%
                     </Typography>
                   </Stack>
+
+                  {doc.classificationReasons && (
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      {doc.classificationReasons}
+                    </Typography>
+                  )}
                 </TableCell>
 
                 <TableCell>

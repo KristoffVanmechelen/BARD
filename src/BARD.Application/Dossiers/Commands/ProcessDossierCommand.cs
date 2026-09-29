@@ -141,6 +141,17 @@ public class ProcessDossierCommandHandler
         var errors = new List<string>();
         var unclassifiedFiles = new List<string>();
 
+        var duplicateReferenceExists =
+            await _db.Dossiers.AnyAsync(
+                dossier => dossier.DossierReference == request.DossierReference,
+                ct);
+
+        if (duplicateReferenceExists)
+        {
+            throw new BARD.Application.Common.Exceptions.BusinessRuleViolationException(
+                $"Dossier reference '{request.DossierReference}' already exists.");
+        }
+
         // Inventory first: file type only determines which reader can open
         // the file. It does not determine the evidential role.
         var spreadsheetFiles = request.Files
