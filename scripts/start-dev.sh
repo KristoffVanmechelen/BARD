@@ -14,10 +14,8 @@ mkdir -p logs
 DB_HOST="${BARD_DB_HOST:-sqlserver}"
 DB_PORT="${BARD_DB_PORT:-1433}"
 DB_PASSWORD="${BARD_DB_PASSWORD:-BardDev!Passw0rd2026}"
-export PATH="$PATH:/opt/mssql-tools18/bin"
-
 echo "Checking SQL Server..."
-if ! sqlcmd -S "${DB_HOST},${DB_PORT}" -U sa -P "${DB_PASSWORD}" -C -Q "SELECT 1" >/dev/null 2>&1; then
+if ! timeout 2 bash -c "echo > /dev/tcp/${DB_HOST}/${DB_PORT}" 2>/dev/null; then
     echo "SQL Server not reachable at ${DB_HOST}:${DB_PORT}."
     echo "If this is the first run, wait a few seconds for the container to finish starting and try again."
     exit 1

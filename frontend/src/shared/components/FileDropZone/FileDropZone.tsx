@@ -40,7 +40,7 @@ export function FileDropZone({
   const [isDragging, setIsDragging] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
 
-  const excelFile = files.find(isExcelFile) ?? null;
+  const excelFiles = files.filter(isExcelFile);
   const pdfFiles = files.filter(isPdfFile);
 
   const addFiles = (incomingFiles: File[]) => {
@@ -173,7 +173,7 @@ export function FileDropZone({
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>
           {t(
             'dossier.upload.zone_instruction',
-            'Drag the Excel claim and all dossier PDFs here, or click to select files.',
+            'Drag all available dossier files here, or click to select files. BARD determines their role from the contents.',
           )}
         </Typography>
 
@@ -193,12 +193,10 @@ export function FileDropZone({
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
             <Chip
               size="small"
-              color={excelFile ? 'success' : 'default'}
-              label={
-                excelFile
-                  ? t('dossier.upload.excel_detected', 'Excel claim detected')
-                  : t('dossier.upload.excel_missing', 'Excel claim missing')
-              }
+              color={excelFiles.length > 0 ? 'success' : 'default'}
+              label={t('dossier.upload.excel_count', '{{count}} Excel workbook(s)', {
+                count: excelFiles.length,
+              })}
             />
 
             <Chip
@@ -238,10 +236,13 @@ export function FileDropZone({
                   primary={file.name}
                   secondary={
                     isExcelFile(file)
-                      ? `${t('dossier.upload.file_type_excel', 'Excel claim')} · ${formatFileSize(file.size)}`
+                      ? `${t(
+                          'dossier.upload.file_type_excel',
+                          'Excel workbook — awaiting content analysis',
+                        )} · ${formatFileSize(file.size)}`
                       : `${t(
                           'dossier.upload.file_type_pdf',
-                          'PDF — classification follows automatically',
+                          'PDF — awaiting content analysis',
                         )} · ${formatFileSize(file.size)}`
                   }
                 />
@@ -254,7 +255,7 @@ export function FileDropZone({
       <Typography variant="caption" color="text.secondary">
         {t(
           'dossier.upload.classification_note',
-          'No sorting needed. BARD recognises the Excel claim and classifies each PDF during processing.',
+          'No sorting or renaming needed. Filenames and file types are not treated as proof of a document role.',
         )}
       </Typography>
     </Stack>

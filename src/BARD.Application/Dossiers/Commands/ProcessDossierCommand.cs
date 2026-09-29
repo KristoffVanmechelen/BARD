@@ -25,8 +25,7 @@ public record ProcessDossierCommand(
     string? CompanyCity,
     string? CompanyCountry,
     DateOnly RefundApplicationDate,
-    UploadedFile ExcelFile,
-    IReadOnlyList<UploadedFile> PdfFiles
+    IReadOnlyList<UploadedFile> Files
 ) : IRequest<ProcessDossierResult>;
 
 public record ProcessDossierResult(
@@ -56,13 +55,10 @@ public class ProcessDossierCommandValidator
             .WithMessage(
                 "Enterprise/VAT number is required on the upload form.");
 
-        RuleFor(x => x.ExcelFile)
-            .NotNull();
-
-        RuleFor(x => x.PdfFiles)
+        RuleFor(x => x.Files)
             .NotEmpty()
             .WithMessage(
-                "At least one dossier document (invoice or AC4) must be uploaded.");
+                "At least one dossier file must be uploaded.");
     }
 }
 
@@ -139,43 +135,90 @@ public class ProcessDossierCommandHandler
         CancellationToken ct)
     {
         var errors = new List<string>();
+        var unclassifiedFiles = new List<string>();
 
-        IReadOnlyList<ParsedExcelClaimRow> excelRows;
+        // Inventory first: file type only determines which reader can open
+        // the file. It does not determine the evidential role.
+        var spreadsheetFiles = request.Files
+            .Where(IsSpreadsheet)
+            .ToList();
 
-        try
+        var pdfFiles = request.Files
+            .Where(IsPdf)
+            .ToList();
+
+        foreach (var unsupported in request.Files
+                     .Where(file => !IsSpreadsheet(file) && !IsPdf(file)))
         {
-            using var excelStream =
-                new MemoryStream(request.ExcelFile.Content);
-
-            excelRows = _excelReader.Read(
-                excelStream,
-                request.ExcelFile.FileName);
+            unclassifiedFiles.Add(unsupported.FileName);
         }
-        catch (Exception ex)
+
+        // A workbook becomes a refund-claim candidate only when its CONTENT
+        // matches the current claim schema. A failed workbook parse is local
+        // to that workbook and must never block the dossier.
+        var claimCandidates =
+            new List<(UploadedFile File, IReadOnlyList<ParsedExcelClaimRow> Rows)>();
+
+        foreach (var spreadsheetFile in spreadsheetFiles)
         {
-            return new ProcessDossierResult(
-                Guid.Empty,
-                0,
-                0,
-                0,
-                Array.Empty<string>(),
-                new[]
+            try
+            {
+                using var spreadsheetStream =
+                    new MemoryStream(spreadsheetFile.Content);
+
+                var rows = _excelReader.Read(
+                    spreadsheetStream,
+                    spreadsheetFile.FileName);
+
+                if (rows.Count > 0)
                 {
-                    $"Excel parsing failed: {ex.Message}"
-                });
+                    claimCandidates.Add((spreadsheetFile, rows));
+                }
+                else
+                {
+                    unclassifiedFiles.Add(spreadsheetFile.FileName);
+                }
+            }
+            catch
+            {
+                // Could be an operator overview, bridge workbook or another
+                // evidential spreadsheet. Preserve it and continue.
+                unclassifiedFiles.Add(spreadsheetFile.FileName);
+            }
+        }
+
+        UploadedFile? claimFile = null;
+        IReadOnlyList<ParsedExcelClaimRow> excelRows =
+            Array.Empty<ParsedExcelClaimRow>();
+
+        if (claimCandidates.Count == 1)
+        {
+            claimFile = claimCandidates[0].File;
+            excelRows = claimCandidates[0].Rows;
+
+            unclassifiedFiles.RemoveAll(
+                name => string.Equals(
+                    name,
+                    claimFile.FileName,
+                    StringComparison.OrdinalIgnoreCase));
+        }
+        else if (claimCandidates.Count > 1)
+        {
+            // Several workbooks look claim-like. Do not guess.
+            foreach (var candidate in claimCandidates)
+            {
+                unclassifiedFiles.Add(candidate.File.FileName);
+            }
         }
 
         var invoices = new List<ParsedInvoice>();
         var ac4Declarations =
             new List<ParsedAc4Declaration>();
 
-        var unclassifiedFiles =
-            new List<string>();
-
         var classifications =
             new List<DocumentClassificationResult>();
 
-        foreach (var pdfFile in request.PdfFiles)
+        foreach (var pdfFile in pdfFiles)
         {
             using var classifyStream =
                 new MemoryStream(pdfFile.Content);
@@ -195,31 +238,39 @@ public class ProcessDossierCommandHandler
                 continue;
             }
 
-            using var parseStream =
-                new MemoryStream(pdfFile.Content);
-
-            switch (classification.DocumentKind)
+            try
             {
-                case DocumentKind.Invoice:
-                    invoices.Add(
-                        await _invoiceParser.ParseAsync(
-                            parseStream,
-                            pdfFile.FileName,
-                            ct));
-                    break;
+                using var parseStream =
+                    new MemoryStream(pdfFile.Content);
 
-                case DocumentKind.Ac4Declaration:
-                case DocumentKind.EadEVadDocument:
-                    ac4Declarations.Add(
-                        await _ac4Parser.ParseAsync(
-                            parseStream,
-                            pdfFile.FileName,
-                            ct));
-                    break;
+                switch (classification.DocumentKind)
+                {
+                    case DocumentKind.Invoice:
+                        invoices.Add(
+                            await _invoiceParser.ParseAsync(
+                                parseStream,
+                                pdfFile.FileName,
+                                ct));
+                        break;
 
-                default:
-                    unclassifiedFiles.Add(pdfFile.FileName);
-                    break;
+                    case DocumentKind.Ac4Declaration:
+                    case DocumentKind.EadEVadDocument:
+                        ac4Declarations.Add(
+                            await _ac4Parser.ParseAsync(
+                                parseStream,
+                                pdfFile.FileName,
+                                ct));
+                        break;
+
+                    default:
+                        unclassifiedFiles.Add(pdfFile.FileName);
+                        break;
+                }
+            }
+            catch
+            {
+                // One problematic document must not cancel the dossier.
+                unclassifiedFiles.Add(pdfFile.FileName);
             }
         }
 
@@ -407,14 +458,15 @@ public class ProcessDossierCommandHandler
 
         _db.Dossiers.Add(dossier);
 
-        await PersistExcelDocument(
+        await PersistSpreadsheetDocuments(
             dossier.Id,
-            request.ExcelFile,
+            spreadsheetFiles,
+            claimFile,
             ct);
 
         await PersistPdfDocuments(
             dossier,
-            request.PdfFiles,
+            pdfFiles,
             classifications,
             invoices,
             ac4Declarations,
@@ -431,7 +483,9 @@ public class ProcessDossierCommandHandler
             matchResults.Count,
             invoices.Count,
             ac4Declarations.Count,
-            unclassifiedFiles,
+            unclassifiedFiles
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
             errors);
     }
 
@@ -517,6 +571,27 @@ public class ProcessDossierCommandHandler
         }
     }
 
+    private static bool IsSpreadsheet(
+        UploadedFile file)
+    {
+        var extension =
+            Path.GetExtension(file.FileName);
+
+        return extension.Equals(
+                   ".xlsx",
+                   StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(
+                   ".xls",
+                   StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsPdf(
+        UploadedFile file)
+        => Path.GetExtension(file.FileName)
+            .Equals(
+                ".pdf",
+                StringComparison.OrdinalIgnoreCase);
+
     private static string BuildMatchExplanation(
         MatchResult match)
     {
@@ -537,52 +612,80 @@ public class ProcessDossierCommandHandler
             string.Join(" ", b.Notes);
     }
 
-    private async Task PersistExcelDocument(
+    private async Task PersistSpreadsheetDocuments(
         Guid dossierId,
-        UploadedFile excelFile,
+        IReadOnlyList<UploadedFile> spreadsheetFiles,
+        UploadedFile? claimFile,
         CancellationToken ct)
     {
-        using var stream =
-            new MemoryStream(excelFile.Content);
+        foreach (var spreadsheetFile in spreadsheetFiles)
+        {
+            using var stream =
+                new MemoryStream(spreadsheetFile.Content);
 
-        var hash =
-            Convert.ToHexString(
-                SHA256.HashData(excelFile.Content));
+            var hash =
+                Convert.ToHexString(
+                    SHA256.HashData(spreadsheetFile.Content));
 
-        var blobPath =
-            await _blobStorage.UploadAsync(
-                ExcelBlobContainer,
-                excelFile.FileName,
-                stream,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                ct);
+            var contentType =
+                string.IsNullOrWhiteSpace(spreadsheetFile.ContentType)
+                    ? "application/octet-stream"
+                    : spreadsheetFile.ContentType;
 
-        var document =
-            DossierDocument.Create(
-                dossierId,
-                excelFile.FileName,
-                blobPath,
-                hash,
-                excelFile.Content.Length,
-                _currentUser.UserId);
+            var blobPath =
+                await _blobStorage.UploadAsync(
+                    ExcelBlobContainer,
+                    spreadsheetFile.FileName,
+                    stream,
+                    contentType,
+                    ct);
 
-        document.SetDocumentKind(
-            DocumentKind.CompanyExcelClaim,
-            1.0m,
-            "Uploaded as the company Excel refund claim.");
+            var document =
+                DossierDocument.Create(
+                    dossierId,
+                    spreadsheetFile.FileName,
+                    blobPath,
+                    hash,
+                    spreadsheetFile.Content.Length,
+                    _currentUser.UserId);
 
-        document.SetDocumentRole(
-            DocumentRole.RefundClaim,
-            1.0m,
-            "The uploaded Excel document forms the basis of the refund claim.");
+            var isSelectedClaim =
+                claimFile is not null
+                && claimFile == spreadsheetFile;
 
-        document.SetExtractionResult(
-            ExtractionMethod.ClassicalTextExtraction,
-            1.0m,
-            null,
-            false);
+            if (isSelectedClaim)
+            {
+                document.SetDocumentKind(
+                    DocumentKind.CompanyExcelClaim,
+                    0.8m,
+                    "Workbook content matches the current refund-claim schema. Classification is based on content, not filename.");
 
-        _db.DossierDocuments.Add(document);
+                document.SetDocumentRole(
+                    DocumentRole.RefundClaim,
+                    0.8m,
+                    "This is the single workbook whose contents match the current refund-claim schema.");
+
+                document.SetExtractionResult(
+                    ExtractionMethod.ClassicalTextExtraction,
+                    0.8m,
+                    null,
+                    false);
+            }
+            else
+            {
+                document.SetDocumentKind(
+                    DocumentKind.Unknown,
+                    0.2m,
+                    "Spreadsheet retained as dossier evidence; its role was not uniquely established.");
+
+                document.SetDocumentRole(
+                    DocumentRole.Unknown,
+                    0.2m,
+                    "No automatic role assigned. Workbook remains available for later evidence linking.");
+            }
+
+            _db.DossierDocuments.Add(document);
+        }
     }
 
     private async Task PersistPdfDocuments(
