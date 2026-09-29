@@ -89,6 +89,7 @@ public class ProcessDossierCommandHandler
     private readonly IDocumentRoleClassifierService _documentRoleClassifier;
     private readonly IInvoiceParsingService _invoiceParser;
     private readonly IAc4ParsingService _ac4Parser;
+    private readonly IEadEvadParsingService _eadEvadParser;
     private readonly IMatchingService _matchingService;
     private readonly IExportValidationService _exportValidation;
     private readonly IMrnValidationService _mrnValidation;
@@ -107,6 +108,7 @@ public class ProcessDossierCommandHandler
         IDocumentRoleClassifierService documentRoleClassifier,
         IInvoiceParsingService invoiceParser,
         IAc4ParsingService ac4Parser,
+        IEadEvadParsingService eadEvadParser,
         IMatchingService matchingService,
         IExportValidationService exportValidation,
         IMrnValidationService mrnValidation,
@@ -123,6 +125,7 @@ public class ProcessDossierCommandHandler
         _documentRoleClassifier = documentRoleClassifier;
         _invoiceParser = invoiceParser;
         _ac4Parser = ac4Parser;
+        _eadEvadParser = eadEvadParser;
         _matchingService = matchingService;
         _exportValidation = exportValidation;
         _mrnValidation = mrnValidation;
@@ -216,6 +219,9 @@ public class ProcessDossierCommandHandler
         var ac4Declarations =
             new List<ParsedAc4Declaration>();
 
+        var movementDocuments =
+            new List<ParsedMovementDocument>();
+
         var classifications =
             new List<DocumentClassificationResult>();
 
@@ -255,9 +261,16 @@ public class ProcessDossierCommandHandler
                         break;
 
                     case DocumentKind.Ac4Declaration:
-                    case DocumentKind.EadEVadDocument:
                         ac4Declarations.Add(
                             await _ac4Parser.ParseAsync(
+                                parseStream,
+                                pdfFile.FileName,
+                                ct));
+                        break;
+
+                    case DocumentKind.EadEVadDocument:
+                        movementDocuments.Add(
+                            await _eadEvadParser.ParseAsync(
                                 parseStream,
                                 pdfFile.FileName,
                                 ct));
@@ -471,6 +484,7 @@ public class ProcessDossierCommandHandler
             classifications,
             invoices,
             ac4Declarations,
+            movementDocuments,
             roleClassifications,
             ct);
 
@@ -695,6 +709,7 @@ public class ProcessDossierCommandHandler
         List<DocumentClassificationResult> classifications,
         List<ParsedInvoice> invoices,
         List<ParsedAc4Declaration> ac4Declarations,
+        List<ParsedMovementDocument> movementDocuments,
         IReadOnlyDictionary<
             string,
             DocumentRoleClassificationResult> roleClassifications,
@@ -757,6 +772,11 @@ public class ProcessDossierCommandHandler
                     a => a.SourceFile
                          == pdfFile.FileName);
 
+            var movement =
+                movementDocuments.FirstOrDefault(
+                    m => m.SourceFile
+                         == pdfFile.FileName);
+
               var roleClassification =
                 roleClassifications[
                     classification.FileName];
@@ -790,8 +810,7 @@ public class ProcessDossierCommandHandler
                 }
             }
             else if (classification.DocumentKind
-                     is DocumentKind.Ac4Declaration
-                     or DocumentKind.EadEVadDocument)
+                     == DocumentKind.Ac4Declaration)
             {
                 if (ac4 is not null)
                 {
@@ -828,8 +847,72 @@ public class ProcessDossierCommandHandler
                                 : null));
                 }
             }
+            else if (classification.DocumentKind
+                     == DocumentKind.EadEVadDocument)
+            {
+                if (movement is not null)
+                {
+                    document.SetExtractionResult(
+                        movement.ExtractionMethod,
+                        movement.ExtractionConfidence,
+                        movement.ExtractionWarnings.Count > 0
+                            ? string.Join(
+                                " ",
+                                movement.ExtractionWarnings)
+                            : null,
+                        movement.ExtractionMethod
+                        == ExtractionMethod.Ocr);
+
+                    RecordMovementProvenance(
+                        document,
+                        movement);
+                }
+            }
 
             _db.DossierDocuments.Add(document);
+        }
+    }
+
+    private static void RecordMovementProvenance(
+        DossierDocument document,
+        ParsedMovementDocument movement)
+    {
+        void Record(string fieldName, string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return;
+
+            document.RecordExtractedField(
+                fieldName,
+                value,
+                null,
+                null,
+                movement.ExtractionConfidence);
+        }
+
+        Record("ARC", movement.Arc);
+        Record("LRN", movement.Lrn);
+        Record("MovementDateTime", movement.ValidationDateTime);
+
+        foreach (var record in movement.Records)
+        {
+            var prefix = $"MovementRecord[{record.RecordNumber}]";
+
+            Record($"{prefix}.EmcsExciseCode", record.EmcsExciseCode);
+            Record($"{prefix}.BelgianExciseCode", record.BelgianExciseCode);
+            Record(
+                $"{prefix}.QuantityLitres",
+                record.QuantityLitres?.ToString(CultureInfo.InvariantCulture));
+            Record($"{prefix}.Unit", record.Unit);
+            Record($"{prefix}.CnCode", record.CnCode);
+            Record(
+                $"{prefix}.AlcoholStrength",
+                record.AlcoholStrength?.ToString(CultureInfo.InvariantCulture));
+            Record(
+                $"{prefix}.DegreesPlato",
+                record.DegreesPlato?.ToString(CultureInfo.InvariantCulture));
+            Record($"{prefix}.RawDescription", record.RawDescription);
+            Record($"{prefix}.MappingReason", record.MappingReason);
         }
     }
 

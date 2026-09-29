@@ -248,6 +248,7 @@ export function DossierDetailPage() {
                 'PeriodStart',
                 'PeriodEnd',
                 'Declarant',
+                'MovementDateTime',
               ]);
 
               const generalFields = doc.extractedFields.filter((field) => {
@@ -264,21 +265,37 @@ export function DossierDetailPage() {
               });
 
               const articleMap = new Map<number, Record<string, string | null>>();
+              const movementRecordMap = new Map<number, Record<string, string | null>>();
 
-              doc.extractedFields
-                .filter((field) => field.fieldName.startsWith('Article['))
-                .forEach((field) => {
-                  const match = field.fieldName.match(/^Article\[(\d+)\]\.(.+)$/);
-                  if (!match) return;
+              doc.extractedFields.forEach((field) => {
+                const articleMatch =
+                  field.fieldName.match(/^Article\[(\d+)\]\.(.+)$/);
 
-                  const articleNumber = Number(match[1]);
-                  const propertyName = match[2];
+                if (articleMatch) {
+                  const articleNumber = Number(articleMatch[1]);
+                  const propertyName = articleMatch[2];
                   const current = articleMap.get(articleNumber) ?? {};
                   current[propertyName] = field.value;
                   articleMap.set(articleNumber, current);
-                });
+                  return;
+                }
+
+                const movementMatch =
+                  field.fieldName.match(/^MovementRecord\[(\d+)\]\.(.+)$/);
+
+                if (movementMatch) {
+                  const recordNumber = Number(movementMatch[1]);
+                  const propertyName = movementMatch[2];
+                  const current = movementRecordMap.get(recordNumber) ?? {};
+                  current[propertyName] = field.value;
+                  movementRecordMap.set(recordNumber, current);
+                }
+              });
 
               const articles = [...articleMap.entries()]
+                .sort(([a], [b]) => a - b);
+
+              const movementRecords = [...movementRecordMap.entries()]
                 .sort(([a], [b]) => a - b);
 
               return (
@@ -347,7 +364,7 @@ export function DossierDetailPage() {
                         spacing={2}
                         useFlexGap
                         flexWrap="wrap"
-                        sx={{ mb: articles.length > 0 ? 1.5 : 0 }}
+                        sx={{ mb: articles.length > 0 || movementRecords.length > 0 ? 1.5 : 0 }}
                       >
                         {generalFields.map((field) => (
                           <Typography key={field.fieldName} variant="body2">
@@ -380,6 +397,31 @@ export function DossierDetailPage() {
                         </TableBody>
                       </Table>
                     )}
+
+                    {movementRecords.length > 0 && (
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Record</TableCell>
+                            <TableCell>EMCS code</TableCell>
+                            <TableCell>Belgian S-code</TableCell>
+                            <TableCell align="right">Quantity</TableCell>
+                            <TableCell>Unit</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {movementRecords.map(([number, record]) => (
+                            <TableRow key={number}>
+                              <TableCell>{number}</TableCell>
+                              <TableCell>{record.EmcsExciseCode ?? '—'}</TableCell>
+                              <TableCell>{record.BelgianExciseCode ?? 'unmapped'}</TableCell>
+                              <TableCell align="right">{record.QuantityLitres ?? '—'}</TableCell>
+                              <TableCell>{record.Unit ?? 'L'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
                   </TableCell>
                 </TableRow>
               )}
@@ -399,6 +441,8 @@ export function DossierDetailPage() {
           </TableBody>
         </Table>
       </Paper>
+
+      <ExciseEvidenceComparison documents={data.documents} />
 
       <Typography variant="h6" sx={{ mb: 1 }}>
         {t('dossier.detail.claim_lines_title', 'Claim lines')}
@@ -436,6 +480,155 @@ export function DossierDetailPage() {
         </TableBody>
       </Table>
     </Box>
+  );
+}
+
+function ExciseEvidenceComparison({ documents }: { documents: DossierDocument[] }) {
+  type Ac4Bucket = { file: string; drn: string; code: string; litres: number };
+  type MovementBucket = { file: string; arc: string; code: string; litres: number };
+
+  const readField = (doc: DossierDocument, name: string) =>
+    doc.extractedFields.find((field) => field.fieldName === name)?.value ?? '—';
+
+  const ac4Buckets: Ac4Bucket[] = [];
+
+  documents
+    .filter((doc) => doc.documentKind === 'Ac4Declaration')
+    .forEach((doc) => {
+      const records = new Map<number, Record<string, string | null>>();
+
+      doc.extractedFields.forEach((field) => {
+        const match = field.fieldName.match(/^Article\[(\d+)\]\.(.+)$/);
+        if (!match) return;
+
+        const number = Number(match[1]);
+        const current = records.get(number) ?? {};
+        current[match[2]] = field.value;
+        records.set(number, current);
+      });
+
+      const byCode = new Map<string, number>();
+
+      records.forEach((record) => {
+        const code = record.ExciseCode;
+        const quantity = Number(record.TaxBase);
+        const unit = (record.Unit ?? '').toLowerCase();
+
+        if (!code || !Number.isFinite(quantity)) return;
+
+        const litres = unit.startsWith('hl') ? quantity * 100 : quantity;
+        byCode.set(code, (byCode.get(code) ?? 0) + litres);
+      });
+
+      byCode.forEach((litres, code) => {
+        ac4Buckets.push({
+          file: doc.originalFileName,
+          drn: readField(doc, 'DRN'),
+          code,
+          litres,
+        });
+      });
+    });
+
+  const movementBuckets: MovementBucket[] = [];
+
+  documents
+    .filter((doc) => doc.documentKind === 'EadEVadDocument')
+    .forEach((doc) => {
+      const records = new Map<number, Record<string, string | null>>();
+
+      doc.extractedFields.forEach((field) => {
+        const match = field.fieldName.match(/^MovementRecord\[(\d+)\]\.(.+)$/);
+        if (!match) return;
+
+        const number = Number(match[1]);
+        const current = records.get(number) ?? {};
+        current[match[2]] = field.value;
+        records.set(number, current);
+      });
+
+      const byCode = new Map<string, number>();
+
+      records.forEach((record) => {
+        const code = record.BelgianExciseCode;
+        const quantity = Number(record.QuantityLitres);
+
+        if (!code || !Number.isFinite(quantity)) return;
+
+        byCode.set(code, (byCode.get(code) ?? 0) + quantity);
+      });
+
+      byCode.forEach((litres, code) => {
+        movementBuckets.push({
+          file: doc.originalFileName,
+          arc: readField(doc, 'ARC'),
+          code,
+          litres,
+        });
+      });
+    });
+
+  if (movementBuckets.length === 0) return null;
+
+  const rows = movementBuckets.flatMap((movement) => {
+    const candidates = ac4Buckets.filter((ac4) => ac4.code === movement.code);
+
+    if (candidates.length === 0) {
+      return [{ movement, ac4: null as Ac4Bucket | null }];
+    }
+
+    return candidates.map((ac4) => ({ movement, ac4 }));
+  });
+
+  return (
+    <Paper variant="outlined" sx={{ mb: 3, p: 2 }}>
+      <Typography variant="h6" sx={{ mb: 0.5 }}>
+        Code / quantity comparison
+      </Typography>
+      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
+        Candidate comparison only: same S-code and sufficient volume do not by themselves prove that the same commercial goods are covered.
+      </Typography>
+
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell>ARC</TableCell>
+            <TableCell>S-code</TableCell>
+            <TableCell align="right">Movement (L)</TableCell>
+            <TableCell>Candidate DRN</TableCell>
+            <TableCell align="right">AC4 available (L)</TableCell>
+            <TableCell>Finding</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {rows.map(({ movement, ac4 }, index) => {
+            const sufficient =
+              ac4 !== null && ac4.litres + 0.0001 >= movement.litres;
+
+            return (
+              <TableRow key={`${movement.file}-${movement.code}-${ac4?.file ?? 'none'}-${index}`}>
+                <TableCell>{movement.arc}</TableCell>
+                <TableCell>{movement.code}</TableCell>
+                <TableCell align="right">
+                  {movement.litres.toFixed(3).replace(/\.?0+$/, '')}
+                </TableCell>
+                <TableCell>{ac4?.drn ?? '—'}</TableCell>
+                <TableCell align="right">
+                  {ac4 ? ac4.litres.toFixed(3).replace(/\.?0+$/, '') : '—'}
+                </TableCell>
+                <TableCell>
+                  {ac4 === null
+                    ? 'No matching AC4 candidate supplied'
+                    : sufficient
+                      ? 'S-code matches; candidate volume sufficient'
+                      : 'S-code matches; candidate volume insufficient'}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </Paper>
   );
 }
 
