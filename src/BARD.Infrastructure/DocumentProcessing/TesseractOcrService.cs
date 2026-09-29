@@ -1,53 +1,202 @@
+using System.Security.Cryptography;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using BARD.Application.Common.Options;
 using BARD.Application.DocumentProcessing.Interfaces;
 using Microsoft.Extensions.Options;
 using PDFtoImage;
 using SkiaSharp;
-using Tesseract;
 
 namespace BARD.Infrastructure.DocumentProcessing;
 
 /// <summary>
-/// OCR fallback for scanned pages. Ports core/ingestion/ocr_engine.py:
-/// renders the flagged page(s) to an image (PDFtoImage/PDFium — the
-/// managed-code equivalent of the Python prototype's PyMuPDF/pdfplumber
-/// rasterization) then runs Tesseract, matching the prototype's
-/// "Tesseract via pytesseract" default engine exactly (core/config.py
-/// OCR.engine == "tesseract").
+/// OCR fallback for scanned PDF pages.
+/// Pages are rendered with PDFtoImage and passed to the system Tesseract
+/// executable through stdin. This avoids native-wrapper/tessdata issues
+/// in the Codespace runtime.
 /// </summary>
-public class TesseractOcrService : IOcrService
+public sealed class TesseractOcrService : IOcrService
 {
     private readonly OcrOptions _options;
 
-    public TesseractOcrService(IOptions<OcrOptions> options) => _options = options.Value;
+    // Scoped service: cache lives only for the current HTTP request.
+    // This removes duplicate OCR between classification and parsing
+    // without retaining dossier contents beyond the request.
+    private readonly ConcurrentDictionary<string, string> _pageCache =
+        new();
 
-    public Task<IReadOnlyDictionary<int, string>> OcrPagesAsync(Stream pdfStream, IReadOnlyList<int> pageNumbers, CancellationToken ct = default)
+    public TesseractOcrService(
+        IOptions<OcrOptions> options)
     {
-        var results = new Dictionary<int, string>();
+        _options = options.Value;
+    }
 
-        using var engine = new TesseractEngine(_options.TessDataPath, _options.Language, EngineMode.Default);
+    public async Task<IReadOnlyDictionary<int, string>> OcrPagesAsync(
+        Stream pdfStream,
+        IReadOnlyList<int> pageNumbers,
+        CancellationToken ct = default)
+    {
+        using var memoryStream =
+            new MemoryStream();
 
-        // PDFtoImage needs the stream position reset for each render call
-        // since it re-reads the document; buffer to a byte array once.
-        using var memoryStream = new MemoryStream();
-        pdfStream.Position = 0;
-        pdfStream.CopyTo(memoryStream);
-        var pdfBytes = memoryStream.ToArray();
+        if (pdfStream.CanSeek)
+            pdfStream.Position = 0;
 
-        foreach (var pageNumber in pageNumbers)
-        {
-            ct.ThrowIfCancellationRequested();
+        await pdfStream.CopyToAsync(
+            memoryStream,
+            ct);
 
-            using var bitmap = Conversion.ToImage(pdfBytes, page: pageNumber, options: new(Dpi: _options.Dpi));
-            using var pngStream = new MemoryStream();
-            bitmap.Encode(pngStream, SKEncodedImageFormat.Png, 100);
-            pngStream.Position = 0;
+        var pdfBytes =
+            memoryStream.ToArray();
 
-            using var pix = Pix.LoadFromMemory(pngStream.ToArray());
-            using var ocrPage = engine.Process(pix);
-            results[pageNumber] = ocrPage.GetText();
-        }
+        var documentHash =
+            Convert.ToHexString(
+                SHA256.HashData(pdfBytes));
 
-        return Task.FromResult<IReadOnlyDictionary<int, string>>(results);
+        var pages =
+            pageNumbers
+                .Distinct()
+                .OrderBy(x => x)
+                .ToArray();
+
+        var results =
+            new ConcurrentDictionary<int, string>();
+
+        using var gate =
+            new SemaphoreSlim(2);
+
+        var tasks =
+            pages.Select(
+                async pageNumber =>
+                {
+                    var cacheKey =
+                        $"{documentHash}:{pageNumber}:{_options.Dpi}:{_options.Language}";
+
+                    if (_pageCache.TryGetValue(
+                            cacheKey,
+                            out var cachedText))
+                    {
+                        results[pageNumber] =
+                            cachedText;
+
+                        return;
+                    }
+
+                    await gate.WaitAsync(ct);
+
+                    try
+                    {
+                        if (_pageCache.TryGetValue(
+                                cacheKey,
+                                out cachedText))
+                        {
+                            results[pageNumber] =
+                                cachedText;
+
+                            return;
+                        }
+
+                        ct.ThrowIfCancellationRequested();
+
+                        using var bitmap =
+                            Conversion.ToImage(
+                                pdfBytes,
+                                page: pageNumber,
+                                options: new(
+                                    Dpi: _options.Dpi));
+
+                        using var pngStream =
+                            new MemoryStream();
+
+                        bitmap.Encode(
+                            pngStream,
+                            SKEncodedImageFormat.Png,
+                            100);
+
+                        var startInfo =
+                            new ProcessStartInfo
+                            {
+                                FileName = "tesseract",
+                                RedirectStandardInput = true,
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true,
+                                UseShellExecute = false,
+                                CreateNoWindow = true,
+                            };
+
+                        startInfo.ArgumentList.Add("stdin");
+                        startInfo.ArgumentList.Add("stdout");
+                        startInfo.ArgumentList.Add("-l");
+                        startInfo.ArgumentList.Add(
+                            _options.Language);
+
+                        if (!string.IsNullOrWhiteSpace(
+                                _options.TessDataPath)
+                            && Directory.Exists(
+                                _options.TessDataPath))
+                        {
+                            startInfo.ArgumentList.Add(
+                                "--tessdata-dir");
+
+                            startInfo.ArgumentList.Add(
+                                _options.TessDataPath);
+                        }
+
+                        using var process =
+                            Process.Start(startInfo)
+                            ?? throw new InvalidOperationException(
+                                "Could not start the Tesseract OCR process.");
+
+                        var outputTask =
+                            process.StandardOutput
+                                .ReadToEndAsync(ct);
+
+                        var errorTask =
+                            process.StandardError
+                                .ReadToEndAsync(ct);
+
+                        await process.StandardInput.BaseStream
+                            .WriteAsync(
+                                pngStream.ToArray(),
+                                ct);
+
+                        await process.StandardInput.BaseStream
+                            .FlushAsync(ct);
+
+                        process.StandardInput.Close();
+
+                        await process.WaitForExitAsync(ct);
+
+                        var output =
+                            await outputTask;
+
+                        var error =
+                            await errorTask;
+
+                        if (process.ExitCode != 0)
+                        {
+                            throw new InvalidOperationException(
+                                $"Tesseract exited with code {process.ExitCode}: {error}");
+                        }
+
+                        _pageCache[cacheKey] =
+                            output;
+
+                        results[pageNumber] =
+                            output;
+                    }
+                    finally
+                    {
+                        gate.Release();
+                    }
+                });
+
+        await Task.WhenAll(tasks);
+
+        return results
+            .OrderBy(pair => pair.Key)
+            .ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value);
     }
 }

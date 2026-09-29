@@ -102,6 +102,7 @@ public class GetDossierDetailQueryHandler
         var dossier = await _db.Dossiers
             .Include(d => d.Lines)
             .Include(d => d.Documents)
+                .ThenInclude(doc => doc.ExtractedFields)
             .FirstOrDefaultAsync(
                 d => d.Id == request.DossierId,
                 cancellationToken)
@@ -173,6 +174,7 @@ public class GetDossierDetailQueryHandler
                 doc.OriginalFileName,
                 doc.DocumentKind.ToString(),
                 doc.ClassificationConfidence,
+                doc.ClassificationReasons,
                 doc.DocumentRole.ToString(),
                 doc.RoleConfidence,
                 doc.RoleReasons,
@@ -187,7 +189,16 @@ public class GetDossierDetailQueryHandler
                 doc.ExtractionMethod.ToString(),
                 doc.ExtractionConfidence,
                 doc.OcrWasRequired,
-                doc.ExtractionWarnings))
+                doc.ExtractionWarnings,
+                doc.ExtractedFields
+                    .OrderBy(field => field.FieldName)
+                    .Select(field =>
+                        new DossierExtractedFieldDto(
+                            field.FieldName,
+                            field.Value,
+                            field.PageNumber,
+                            field.Confidence))
+                    .ToList()))
             .ToList();
 
         return new DossierDetailDto(

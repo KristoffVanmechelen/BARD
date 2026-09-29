@@ -10,8 +10,7 @@ export interface ProcessDossierFormValues {
   companyCity?: string;
   companyCountry?: string;
   refundApplicationDate: string; // yyyy-MM-dd
-  excelFile: File;
-  pdfFiles: File[];
+  files: File[];
 }
 
 export interface ProcessDossierResult {
@@ -36,8 +35,7 @@ export function useProcessDossier() {
       if (values.companyCity) form.append('companyCity', values.companyCity);
       if (values.companyCountry) form.append('companyCountry', values.companyCountry);
       form.append('refundApplicationDate', values.refundApplicationDate);
-      form.append('excelFile', values.excelFile);
-      values.pdfFiles.forEach((f) => form.append('pdfFiles', f));
+      values.files.forEach((file) => form.append('files', file));
 
       const { data } = await apiClient.post<ProcessDossierResult>('/dossiers/process', form, {
         headers: { 'Content-Type': 'multipart/form-data' },

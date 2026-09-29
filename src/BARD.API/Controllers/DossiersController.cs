@@ -51,9 +51,10 @@ public class DossiersController : ControllerBase
         => Ok(await _mediator.Send(new GetDossierDetailQuery(id), ct));
 
     /// <summary>
-    /// Runs the full ingestion/matching/validation pipeline: officer
-    /// uploads the Excel claim plus every dossier PDF together (no
-    /// sorting required — documents are auto-classified server-side).
+    /// Runs the dossier intake/analysis pipeline. Every supported file is
+    /// uploaded through one neutral collection. The backend determines
+    /// document meaning from contents; no Excel or PDF role is assumed from
+    /// filename or technical file type alone.
     /// </summary>
     [HttpPost("process")]
     [Authorize(Policy = PermissionCodes.DossierProcess)]
@@ -68,8 +69,7 @@ public class DossiersController : ControllerBase
         [FromForm] string? companyCity,
         [FromForm] string? companyCountry,
         [FromForm] DateOnly refundApplicationDate,
-        IFormFile excelFile,
-        List<IFormFile> pdfFiles,
+        List<IFormFile> files,
         CancellationToken ct)
     {
         async Task<UploadedFile> ToUploadedFile(IFormFile file)
@@ -83,13 +83,11 @@ public class DossiersController : ControllerBase
                 file.ContentType);
         }
 
-        var excel = await ToUploadedFile(excelFile);
+        var uploadedFiles = new List<UploadedFile>();
 
-        var pdfs = new List<UploadedFile>();
-
-        foreach (var file in pdfFiles)
+        foreach (var file in files)
         {
-            pdfs.Add(await ToUploadedFile(file));
+            uploadedFiles.Add(await ToUploadedFile(file));
         }
 
         var result = await _mediator.Send(
@@ -102,8 +100,7 @@ public class DossiersController : ControllerBase
                 companyCity,
                 companyCountry,
                 refundApplicationDate,
-                excel,
-                pdfs),
+                uploadedFiles),
             ct);
 
         return Ok(result);

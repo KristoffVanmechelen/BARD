@@ -12,13 +12,14 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { FileDropZone, isExcelFile, isPdfFile } from '@/shared/components/FileDropZone';
+import { FileDropZone } from '@/shared/components/FileDropZone';
 import { useProcessDossier } from './dossierProcessing.api';
 
 /**
  * Upload/process workflow.
- * The user uploads all dossier files through one upload zone.
- * The frontend still sends one Excel file and all PDFs to the existing backend endpoint.
+ * Every supported upload is sent as one neutral dossier file collection.
+ * Document role is determined from content during processing, never from filename
+ * or technical file type alone.
  */
 export function DossierUploadPage() {
   const { t } = useTranslation();
@@ -38,28 +39,21 @@ export function DossierUploadPage() {
 
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
 
-  const excelFile = uploadedFiles.find(isExcelFile) ?? null;
-  const pdfFiles = uploadedFiles.filter(isPdfFile);
-
   const canSubmit =
     form.dossierReference.trim() !== '' &&
     form.companyName.trim() !== '' &&
     form.enterpriseNumber.trim() !== '' &&
-    excelFile !== null &&
-    pdfFiles.length > 0 &&
+    uploadedFiles.length > 0 &&
     !processDossier.isPending;
 
   const handleSubmit = async () => {
-    if (!excelFile) return;
-
     const result = await processDossier.mutateAsync({
       ...form,
       companyAddressLine: form.companyAddressLine || undefined,
       companyPostalCode: form.companyPostalCode || undefined,
       companyCity: form.companyCity || undefined,
       companyCountry: form.companyCountry || undefined,
-      excelFile,
-      pdfFiles,
+      files: uploadedFiles,
     });
 
     if (result.errors.length === 0) {

@@ -72,6 +72,18 @@ public static class DependencyInjection
             InvoiceParsingService>();
 
         services.AddScoped<
+            IDocumentReferenceResolver,
+            DocumentReferenceResolverService>();
+
+        services.AddSingleton<
+            IExciseCodeMappingService,
+            ExciseCodeMappingService>();
+
+        services.AddScoped<
+            IEadEvadParsingService,
+            EadEvadParsingService>();
+
+        services.AddScoped<
             IAc4ParsingService,
             Ac4ParsingService>();
 

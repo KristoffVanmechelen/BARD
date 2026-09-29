@@ -72,6 +72,30 @@ public interface IAc4ParsingService
         CancellationToken ct = default);
 }
 
+public interface IDocumentReferenceResolver
+{
+    IReadOnlyList<ResolvedDocumentReference> ResolveAll(
+        string text,
+        BARD.Domain.Enums.DocumentKind? documentKind = null);
+}
+
+public interface IEadEvadParsingService
+{
+    Task<ParsedMovementDocument> ParseAsync(
+        Stream pdfStream,
+        string fileName,
+        CancellationToken ct = default);
+}
+
+public interface IExciseCodeMappingService
+{
+    ExciseCodeMappingResult Map(
+        string? emcsExciseCode,
+        string? rawDescription,
+        decimal? alcoholStrength,
+        decimal? degreesPlato);
+}
+
 /// <summary>Ports core/ingestion/excel_reader.py.</summary>
 public interface IExcelClaimReaderService
 {

@@ -40,11 +40,9 @@ step "Wait for SQL Server readiness"
 DB_HOST="${BARD_DB_HOST:-sqlserver}"
 DB_PORT="${BARD_DB_PORT:-1433}"
 DB_PASSWORD="${BARD_DB_PASSWORD:-BardDev!Passw0rd2026}"
-export PATH="$PATH:/opt/mssql-tools18/bin"
-
 READY=0
 for i in $(seq 1 60); do
-    if sqlcmd -S "${DB_HOST},${DB_PORT}" -U sa -P "${DB_PASSWORD}" -C -Q "SELECT 1" >/dev/null 2>&1; then
+    if timeout 2 bash -c "echo > /dev/tcp/${DB_HOST}/${DB_PORT}" 2>/dev/null; then
         READY=1
         break
     fi
