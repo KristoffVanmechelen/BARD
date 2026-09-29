@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using BARD.Application.Common.Options;
@@ -17,6 +18,12 @@ namespace BARD.Infrastructure.DocumentProcessing;
 public sealed class TesseractOcrService : IOcrService
 {
     private readonly OcrOptions _options;
+
+    // Scoped service: cache lives only for the current HTTP request.
+    // This removes duplicate OCR between classification and parsing
+    // without retaining dossier contents beyond the request.
+    private readonly ConcurrentDictionary<string, string> _pageCache =
+        new();
 
     public TesseractOcrService(
         IOptions<OcrOptions> options)
@@ -42,6 +49,10 @@ public sealed class TesseractOcrService : IOcrService
         var pdfBytes =
             memoryStream.ToArray();
 
+        var documentHash =
+            Convert.ToHexString(
+                SHA256.HashData(pdfBytes));
+
         var pages =
             pageNumbers
                 .Distinct()
@@ -58,10 +69,33 @@ public sealed class TesseractOcrService : IOcrService
             pages.Select(
                 async pageNumber =>
                 {
+                    var cacheKey =
+                        $"{documentHash}:{pageNumber}:{_options.Dpi}:{_options.Language}";
+
+                    if (_pageCache.TryGetValue(
+                            cacheKey,
+                            out var cachedText))
+                    {
+                        results[pageNumber] =
+                            cachedText;
+
+                        return;
+                    }
+
                     await gate.WaitAsync(ct);
 
                     try
                     {
+                        if (_pageCache.TryGetValue(
+                                cacheKey,
+                                out cachedText))
+                        {
+                            results[pageNumber] =
+                                cachedText;
+
+                            return;
+                        }
+
                         ct.ThrowIfCancellationRequested();
 
                         using var bitmap =
@@ -145,7 +179,11 @@ public sealed class TesseractOcrService : IOcrService
                                 $"Tesseract exited with code {process.ExitCode}: {error}");
                         }
 
-                        results[pageNumber] = output;
+                        _pageCache[cacheKey] =
+                            output;
+
+                        results[pageNumber] =
+                            output;
                     }
                     finally
                     {
