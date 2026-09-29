@@ -25,12 +25,15 @@ public class Ac4ParsingService : IAc4ParsingService
         _referenceResolver = referenceResolver;
     }
 
+    private const string DateToken =
+        @"[0-9]{1,2}[-/.][0-9]{1,2}[-/.][0-9]{2,4}";
+
     private static readonly Regex ValidationDatePattern = new(
-        @"Valideringsdatum\s*([0-9]{1,2}[-/.][0-9]{1,2}[-/.][0-9]{2,4})",
+        $@"Valideringsdatum\s*({DateToken})",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex PeriodPattern = new(
-        @"Aangifteperiode\s*Van\s*([0-9]{1,2}[-/.][0-9]{1,2}[-/.][0-9]{2,4})\s*Tot\s*([0-9]{1,2}[-/.][0-9]{1,2}[-/.][0-9]{2,4})",
+        $@"Aangifteperiode\s*Van\s*({DateToken})\s*Tot\s*({DateToken})",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex DeclarantPattern = new(
@@ -38,27 +41,43 @@ public class Ac4ParsingService : IAc4ParsingService
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex PaymentTypePattern = new(
-        @"Type\s*betaling\s*([A-Z0-9]+)",
+        @"Type\s*betaling\s*([A-Z0-9]+)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex AccountPattern = new(
-        @"Rekenings\S*\s*nummer\s*([A-Z0-9]+)",
+        @"Rekenings\S*\s*nummer\s*([A-Z0-9]+)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private static readonly Regex TotalAmountPattern = new(
+    private static readonly Regex TotalAmountLabelPattern = new(
+        @"Totaalbedrag\s*([\d.]+,\d{2})\s*€?",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex TotalAmountAfterAccountPattern = new(
         @"Rekenings\S*\s*nummer\s*[A-Z0-9]+\s*([\d.]+,\d{2})\s*€",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex ArticleStartPattern = new(
+        @"(?<!\d)(?<nr>\d{1,3})\s*(?<code>S\d{3})\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex ArticleBlockPattern = new(
         @"(?is)(?<nr>\d{1,3})\s*(?<code>S\d{3})\b(?<body>.*?)(?=\d{1,3}\s*S\d{3}\b|\z)",
         RegexOptions.Compiled);
 
-    private static readonly Regex ArticleDatesPattern = new(
-        @"(?<start>[0-9]{1,2}[-/.][0-9]{1,2}[-/.][0-9]{2,4})\s*(?<end>[0-9]{1,2}[-/.][0-9]{1,2}[-/.][0-9]{2,4})",
+    private static readonly Regex DatePattern = new(
+        DateToken,
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private static readonly Regex AdditionalDescriptionPattern = new(
-        @"(?s)^(?<description>.*?)(?<additional>[A-Z]\d?)\s*$",
+    private static readonly Regex ArticleDatesPattern = new(
+        $@"(?<start>{DateToken})\s*(?<end>{DateToken})",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex QuantityUnitPattern = new(
+        @"(?<!\d)(?<qty>\d{1,9}(?:[.,]\d{1,4})?)\s*(?<unit>hl(?:°Plato)?)(?![A-Za-z])",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex AdditionalDescriptionAtEndPattern = new(
+        @"\s+\b[A-Z]\d?\s*$",
         RegexOptions.Compiled);
 
     private static readonly Regex DecimalPattern = new(
@@ -92,8 +111,7 @@ public class Ac4ParsingService : IAc4ParsingService
         }
 
         var assessment =
-            _ocrDetection.AssessPages(
-                extraction.PageTexts);
+            _ocrDetection.AssessPages(extraction.PageTexts);
 
         var method =
             ExtractionMethod.ClassicalTextExtraction;
@@ -114,16 +132,13 @@ public class Ac4ParsingService : IAc4ParsingService
                         ct);
 
                 pages = pages
-                    .Select(
-                        p => ocr.TryGetValue(
-                            p.PageNumber,
-                            out var t)
-                            ? p with { Text = t }
+                    .Select(p =>
+                        ocr.TryGetValue(p.PageNumber, out var text)
+                            ? p with { Text = text }
                             : p)
                     .ToList();
 
-                method =
-                    ExtractionMethod.Ocr;
+                method = ExtractionMethod.Ocr;
 
                 warnings.Add(
                     $"OCR applied to page(s) {string.Join(",", assessment.PagesNeedingOcr)}.");
@@ -140,94 +155,104 @@ public class Ac4ParsingService : IAc4ParsingService
                 "\n",
                 pages.Select(p => p.Text));
 
+        var tableRows =
+            pages.SelectMany(p => p.TableRows)
+                .ToList();
+
         var tableText =
             string.Join(
                 "\n",
-                pages.SelectMany(
-                    p => p.TableRows.Select(
-                        row => string.Join(" ", row))));
+                tableRows.Select(
+                    row => string.Join(" ", row)));
 
-        // PdfPig's Page.Text can concatenate neighbouring positioned words.
-        // Table reconstruction often preserves the missing boundaries, so use both.
-        var searchText =
+        var primaryText =
             string.IsNullOrWhiteSpace(tableText)
                 ? rawText
-                : rawText + "\n" + tableText;
+                : tableText;
 
         var references =
             _referenceResolver.ResolveAll(
-                searchText,
+                primaryText + "\n" + rawText,
                 DocumentKind.Ac4Declaration);
 
         var drn =
-            references
-                .FirstOrDefault(
-                    r => r.Type == DocumentReferenceType.Drn)
-                ?.Value;
+            references.FirstOrDefault(
+                r => r.Type == DocumentReferenceType.Drn)?.Value;
 
         var lrn =
-            references
-                .FirstOrDefault(
-                    r => r.Type == DocumentReferenceType.Lrn)
-                ?.Value;
+            references.FirstOrDefault(
+                r => r.Type == DocumentReferenceType.Lrn)?.Value;
 
         var mrn =
-            references
-                .FirstOrDefault(
-                    r => r.Type == DocumentReferenceType.Mrn)
-                ?.Value;
+            references.FirstOrDefault(
+                r => r.Type == DocumentReferenceType.Mrn)?.Value;
 
         var validationDate =
             ParseDate(
-                Capture(
+                CapturePreferred(
                     ValidationDatePattern,
-                    searchText));
+                    tableText,
+                    rawText));
+
+        var periodSource =
+            FirstMatchingText(
+                PeriodPattern,
+                tableText,
+                rawText);
 
         var periodMatch =
-            PeriodPattern.Match(searchText);
+            PeriodPattern.Match(periodSource ?? string.Empty);
 
         var periodStart =
             periodMatch.Success
-                ? ParseDate(
-                    periodMatch.Groups[1].Value)
+                ? ParseDate(periodMatch.Groups[1].Value)
                 : null;
 
         var periodEnd =
             periodMatch.Success
-                ? ParseDate(
-                    periodMatch.Groups[2].Value)
+                ? ParseDate(periodMatch.Groups[2].Value)
                 : null;
 
         var declarant =
-            Capture(
+            CapturePreferred(
                 DeclarantPattern,
-                searchText);
+                tableText,
+                rawText);
 
         var paymentType =
-            Capture(
+            CapturePreferred(
                 PaymentTypePattern,
-                searchText);
+                tableText,
+                rawText);
 
         var account =
-            Capture(
+            CapturePreferred(
                 AccountPattern,
-                searchText);
+                tableText,
+                rawText);
 
         var total =
             ParseBelgianDecimal(
-                Capture(
-                    TotalAmountPattern,
-                    searchText));
+                CapturePreferred(
+                    TotalAmountLabelPattern,
+                    tableText,
+                    rawText)
+                ?? CapturePreferred(
+                    TotalAmountAfterAccountPattern,
+                    tableText,
+                    rawText));
+
+        var structuredArticles =
+            ParseArticlesFromTableRows(tableRows);
 
         var articles =
-            ParseArticles(searchText)
-                .GroupBy(a => (a.ArticleNumber, a.ExciseCode))
-                .Select(g => g
-                    .OrderByDescending(
-                        a => a.TaxBase.HasValue)
-                    .First())
-                .OrderBy(a => a.ArticleNumber)
-                .ToArray();
+            (structuredArticles.Count > 0
+                ? structuredArticles
+                : ParseArticlesFromText(primaryText))
+            .GroupBy(a => (a.ArticleNumber, a.ExciseCode))
+            .Select(g => g.First())
+            .OrderBy(a => a.ArticleNumber)
+            .ToArray();
 
         if (drn is null && mrn is null)
         {
@@ -251,17 +276,11 @@ public class Ac4ParsingService : IAc4ParsingService
         decimal? legacyQuantity = null;
         string? legacyCode = null;
 
-        // Never flatten a multi-article AC4 into one code/quantity.
         if (articles.Length == 1)
         {
-            legacyDescription =
-                articles[0].Description;
-
-            legacyQuantity =
-                articles[0].TaxBase;
-
-            legacyCode =
-                articles[0].ExciseCode;
+            legacyDescription = articles[0].Description;
+            legacyQuantity = articles[0].TaxBase;
+            legacyCode = articles[0].ExciseCode;
         }
 
         var signals =
@@ -269,8 +288,7 @@ public class Ac4ParsingService : IAc4ParsingService
             {
                 drn is not null || mrn is not null,
                 validationDate is not null,
-                periodStart is not null
-                    && periodEnd is not null,
+                periodStart is not null && periodEnd is not null,
                 articles.Length > 0,
                 lrn is not null,
             }
@@ -299,8 +317,158 @@ public class Ac4ParsingService : IAc4ParsingService
             articles);
     }
 
-    private static IReadOnlyList<ParsedAc4Article> ParseArticles(
-        string text)
+    private static IReadOnlyList<ParsedAc4Article>
+        ParseArticlesFromTableRows(
+            IReadOnlyList<IReadOnlyList<string>> rows)
+    {
+        var result =
+            new List<ParsedAc4Article>();
+
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var startLine =
+                NormalizeWhitespace(
+                    string.Join(" ", rows[i]));
+
+            var startMatch =
+                ArticleStartPattern.Match(startLine);
+
+            if (!startMatch.Success)
+                continue;
+
+            if (!int.TryParse(
+                    startMatch.Groups["nr"].Value,
+                    out var articleNumber))
+            {
+                continue;
+            }
+
+            var code =
+                startMatch.Groups["code"].Value.ToUpperInvariant();
+
+            var blockLines =
+                new List<string> { startLine };
+
+            var j = i + 1;
+
+            while (j < rows.Count)
+            {
+                var candidate =
+                    NormalizeWhitespace(
+                        string.Join(" ", rows[j]));
+
+                if (ArticleStartPattern.IsMatch(candidate))
+                    break;
+
+                blockLines.Add(candidate);
+                j++;
+            }
+
+            var firstLineDates =
+                DatePattern.Matches(startLine);
+
+            string? description = null;
+            decimal? taxBase = null;
+            string? unit = null;
+
+            if (firstLineDates.Count >= 2)
+            {
+                var descriptionStart =
+                    startMatch.Index + startMatch.Length;
+
+                var descriptionEnd =
+                    firstLineDates[0].Index;
+
+                if (descriptionEnd > descriptionStart)
+                {
+                    description =
+                        CleanDescription(
+                            startLine[
+                                descriptionStart..descriptionEnd]);
+                }
+
+                var afterDates =
+                    startLine[
+                        (firstLineDates[1].Index
+                         + firstLineDates[1].Length)..];
+
+                var quantityMatch =
+                    QuantityUnitPattern.Match(afterDates);
+
+                if (quantityMatch.Success)
+                {
+                    taxBase =
+                        ParseBelgianDecimal(
+                            quantityMatch.Groups["qty"].Value);
+
+                    unit =
+                        quantityMatch.Groups["unit"].Value;
+                }
+            }
+
+            var descriptionParts =
+                new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(description))
+                descriptionParts.Add(description);
+
+            foreach (var continuation in blockLines.Skip(1))
+            {
+                var quantityMatch =
+                    QuantityUnitPattern.Match(continuation);
+
+                if (!quantityMatch.Success)
+                    continue;
+
+                if (taxBase is null)
+                {
+                    taxBase =
+                        ParseBelgianDecimal(
+                            quantityMatch.Groups["qty"].Value);
+
+                    unit =
+                        quantityMatch.Groups["unit"].Value;
+                }
+
+                var prefix =
+                    continuation[..quantityMatch.Index]
+                        .Trim();
+
+                if (prefix.Any(char.IsLetter))
+                {
+                    var clean =
+                        CleanDescription(prefix);
+
+                    if (!string.IsNullOrWhiteSpace(clean))
+                        descriptionParts.Add(clean);
+                }
+            }
+
+            var fullDescription =
+                NormalizeWhitespace(
+                    string.Join(
+                        " ",
+                        descriptionParts
+                            .Where(p => !string.IsNullOrWhiteSpace(p))
+                            .Distinct()));
+
+            result.Add(
+                new ParsedAc4Article(
+                    articleNumber,
+                    code,
+                    string.IsNullOrWhiteSpace(fullDescription)
+                        ? null
+                        : fullDescription,
+                    null,
+                    taxBase,
+                    unit));
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<ParsedAc4Article>
+        ParseArticlesFromText(string text)
     {
         var result =
             new List<ParsedAc4Article>();
@@ -316,14 +484,10 @@ public class Ac4ParsingService : IAc4ParsingService
             }
 
             var code =
-                match.Groups["code"]
-                    .Value
-                    .Trim();
+                match.Groups["code"].Value.Trim();
 
             var body =
-                match.Groups["body"]
-                    .Value
-                    .Trim();
+                match.Groups["body"].Value.Trim();
 
             var dates =
                 ArticleDatesPattern.Match(body);
@@ -331,64 +495,54 @@ public class Ac4ParsingService : IAc4ParsingService
             if (!dates.Success)
                 continue;
 
-            var beforeDates =
-                body[..dates.Index]
-                    .Trim();
-
-            string? description =
-                beforeDates;
-
-            string? additional =
-                null;
-
-            var additionalMatch =
-                AdditionalDescriptionPattern.Match(
-                    beforeDates);
-
-            if (additionalMatch.Success)
-            {
-                description =
-                    additionalMatch
-                        .Groups["description"]
-                        .Value
-                        .Trim();
-
-                additional =
-                    additionalMatch
-                        .Groups["additional"]
-                        .Value
-                        .Trim();
-            }
+            var description =
+                CleanDescription(
+                    body[..dates.Index]);
 
             var afterDates =
                 body[
                     (dates.Index + dates.Length)..];
 
-            var quantityMatch =
-                DecimalPattern.Match(afterDates);
+            var quantityUnit =
+                QuantityUnitPattern.Match(afterDates);
 
-            var taxBase =
-                quantityMatch.Success
-                    ? ParseBelgianDecimal(
-                        quantityMatch
-                            .Groups[1]
-                            .Value)
-                    : null;
+            decimal? taxBase = null;
+            string? unit = null;
 
-            var unitMatch =
-                UnitPattern.Match(afterDates);
+            if (quantityUnit.Success)
+            {
+                taxBase =
+                    ParseBelgianDecimal(
+                        quantityUnit.Groups["qty"].Value);
 
-            var unit =
-                unitMatch.Success
-                    ? unitMatch.Groups[1].Value
-                    : null;
+                unit =
+                    quantityUnit.Groups["unit"].Value;
+            }
+            else
+            {
+                var quantity =
+                    DecimalPattern.Match(afterDates);
+
+                var unitMatch =
+                    UnitPattern.Match(afterDates);
+
+                if (quantity.Success)
+                {
+                    taxBase =
+                        ParseBelgianDecimal(
+                            quantity.Groups[1].Value);
+                }
+
+                if (unitMatch.Success)
+                    unit = unitMatch.Groups[1].Value;
+            }
 
             result.Add(
                 new ParsedAc4Article(
                     articleNumber,
                     code,
                     description,
-                    additional,
+                    null,
                     taxBase,
                     unit));
         }
@@ -396,17 +550,50 @@ public class Ac4ParsingService : IAc4ParsingService
         return result;
     }
 
-    private static string? Capture(
-        Regex regex,
-        string text)
+    private static string CleanDescription(
+        string value)
     {
-        var match =
-            regex.Match(text);
+        var normalized =
+            NormalizeWhitespace(value);
 
-        return match.Success
-            ? match.Groups[1].Value.Trim()
-            : null;
+        return AdditionalDescriptionAtEndPattern
+            .Replace(normalized, string.Empty)
+            .Trim();
     }
+
+    private static string NormalizeWhitespace(
+        string value)
+        => Regex.Replace(
+            value ?? string.Empty,
+            @"\s+",
+            " ").Trim();
+
+    private static string? CapturePreferred(
+        Regex regex,
+        params string[] texts)
+    {
+        foreach (var text in texts)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                continue;
+
+            var match =
+                regex.Match(text);
+
+            if (match.Success)
+                return match.Groups[1].Value.Trim();
+        }
+
+        return null;
+    }
+
+    private static string? FirstMatchingText(
+        Regex regex,
+        params string[] texts)
+        => texts.FirstOrDefault(
+            text =>
+                !string.IsNullOrWhiteSpace(text)
+                && regex.IsMatch(text));
 
     private static DateOnly? ParseDate(
         string? value)

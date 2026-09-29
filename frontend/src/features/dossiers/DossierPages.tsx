@@ -345,7 +345,6 @@ export function DossierDetailPage() {
                             <TableCell>#</TableCell>
                             <TableCell>Excise code</TableCell>
                             <TableCell>Description</TableCell>
-                            <TableCell>Additional</TableCell>
                             <TableCell align="right">Tax base</TableCell>
                             <TableCell>Unit</TableCell>
                           </TableRow>
@@ -356,7 +355,6 @@ export function DossierDetailPage() {
                               <TableCell>{number}</TableCell>
                               <TableCell>{article.ExciseCode ?? '—'}</TableCell>
                               <TableCell>{article.Description ?? '—'}</TableCell>
-                              <TableCell>{article.AdditionalDescription ?? '—'}</TableCell>
                               <TableCell align="right">{article.TaxBase ?? '—'}</TableCell>
                               <TableCell>{article.Unit ?? '—'}</TableCell>
                             </TableRow>
